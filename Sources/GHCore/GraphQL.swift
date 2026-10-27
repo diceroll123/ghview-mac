@@ -65,12 +65,15 @@ public struct GraphQLClient: Sendable {
         var args = ["api", "graphql", "-f", "query=\(query)"]
         for (key, value) in variables.sorted(by: { $0.key < $1.key }) {
             guard let value else { continue }
-            if let i = value as? Int { args += ["-F", "\(key)=\(i)"] } else { args += ["-f", "\(key)=\(value)"] }
+            if let i = value as? Int { args += ["-F", "\(key)=\(i)"] }
+            else if let b = value as? Bool { args += ["-F", "\(key)=\(b)"] }
+            else { args += ["-f", "\(key)=\(value)"] }
         }
         return args
     }
 
-    /// Variables are passed as strings (`-f`) or ints (`-F`); nil values are omitted.
+    /// Variables are passed as strings (`-f`) or typed ints/bools (`-F`, so GitHub sees a real number or boolean
+    /// rather than the string "true"); nil values are omitted.
     /// Throws if GraphQL reports errors and returns no data.
     public func query<T: Decodable & Sendable>(_ query: String, variables: [String: Any?] = [:], as type: T.Type = T.self) async throws -> T {
         let data = try await gh.run(args(query, variables))

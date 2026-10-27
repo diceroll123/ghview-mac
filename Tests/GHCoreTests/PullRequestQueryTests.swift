@@ -24,6 +24,10 @@ func fixture(_ name: String) throws -> Data {
     #expect(first.id.repo.fullName == "diceroll123/ghview")
     #expect(first.headSha.count == 40)
     #expect(seen.get().prefix(3) == ["api", "graphql", "-f"])
+    // Booleans must go through -F (typed), or GitHub sees the literal string "false" and rejects it.
+    let args = seen.get()
+    let flagIndex = try #require(args.firstIndex(of: "needsReviewers=false"))
+    #expect(args[flagIndex - 1] == "-F")
 }
 
 @Test func checkAggregation() {
