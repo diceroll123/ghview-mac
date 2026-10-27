@@ -29,7 +29,8 @@ private func searchJSON(_ items: [Item], base: Int) throws -> Data {
         n["commits"] = ["nodes": [] as [Any]]                      // no checks at all
         var requests: [[String: Any]] = item.users.map { ["requestedReviewer": ["login": $0]] }
         requests += item.teams.map { ["requestedReviewer": ["slug": $0, "organization": ["login": "acme"]]] }
-        n["reviewRequests"] = ["totalCount": requests.count, "nodes": requests]
+        n["reviewRequests"] = ["totalCount": requests.count]
+        n["reviewRequestNodes"] = ["nodes": requests]
         return n
     }
     conn["pageInfo"] = ["hasNextPage": false, "endCursor": NSNull()]

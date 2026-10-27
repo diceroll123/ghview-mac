@@ -14,7 +14,10 @@ public enum PullRequestQuery {
       viewerLatestReview { state }
       comments { totalCount }
       labels(first: 20) { totalCount nodes { name color } }
-      reviewRequests(first: 20) { totalCount nodes { requestedReviewer { ... on User { login } ... on Team { slug organization { login } } } } }
+      reviewRequests { totalCount }
+      reviewRequestNodes: reviewRequests(first: 20) @include(if: $needsReviewers) {
+        nodes { requestedReviewer { ... on User { login } ... on Team { slug organization { login } } } }
+      }
       commits(last: 1) { nodes { commit { statusCheckRollup { contexts {
         checkRunCountsByState { state count }
         statusContextCountsByState { state count }
@@ -37,7 +40,7 @@ public enum PullRequestQuery {
     """
 
     public static let repoPRs = """
-    query($owner: String!, $name: String!, $first: Int!, $after: String) {
+    query($owner: String!, $name: String!, $first: Int!, $after: String, $needsReviewers: Boolean!) {
       rateLimit { remaining limit cost resetAt used nodeCount }
       repository(owner: $owner, name: $name) {
         pullRequests(states: OPEN, first: $first, after: $after, orderBy: {field: CREATED_AT, direction: DESC}) {
@@ -50,7 +53,7 @@ public enum PullRequestQuery {
     """
 
     public static let searchPRs = """
-    query($q: String!, $first: Int!, $after: String) {
+    query($q: String!, $first: Int!, $after: String, $needsReviewers: Boolean!) {
       rateLimit { remaining limit cost resetAt used nodeCount }
       search(query: $q, type: ISSUE, first: $first, after: $after) {
         issueCount
@@ -101,7 +104,10 @@ public enum PullRequestQuery {
         var viewerLatestReview: Review?
         var comments: Count
         var labels: Nodes<Label>
-        var reviewRequests: Nodes<Request>
+        var reviewRequests: Count
+        /// Absent from the bulk list query unless `$needsReviewers` is true (only the inbox's review-requested
+        /// search needs the actual names, to split direct requests from team ones).
+        var reviewRequestNodes: Nodes<Request>?
         var commits: Nodes<CommitNode>
 
         struct Login: Decodable, Sendable { var login: String }
@@ -187,10 +193,22 @@ public enum PullRequestQuery {
         }
     }
 
+    /// Maps raw review-request nodes into logins and teams. Shared by the bulk list decode (which usually has
+    /// none, since only the inbox's review-requested search asks for them) and `ReviewersQuery`'s lazy fetch.
+    static func mapReviewRequests(_ nodes: [Node.Request?], fallbackOrg: String) -> (reviewers: [String], teams: [ReviewTeam]) {
+        let reviewers = nodes.compactMap { $0?.requestedReviewer?.login }
+        let teams = nodes.compactMap { r -> ReviewTeam? in
+            guard let t = r?.requestedReviewer, let slug = t.slug else { return nil }
+            return ReviewTeam(org: t.organization?.login ?? fallbackOrg, slug: slug)
+        }
+        return (reviewers, teams)
+    }
+
     static func map(_ n: Node) -> PR? {
         guard let number = n.number else { return nil } // search can return non-PR nodes as {}
         let repo = RepoId(owner: n.repository.owner.login, name: n.repository.name)
         let checks = mapChecks(n.commits.nodes.first??.commit.statusCheckRollup?.contexts.nodes ?? [])
+        let reviewRequests = mapReviewRequests(n.reviewRequestNodes?.nodes ?? [], fallbackOrg: repo.owner)
         // GitHub's own per-state totals are exact; counting the fetched checks is only a fallback.
         let rollupContexts = n.commits.nodes.first??.commit.statusCheckRollup?.contexts
         var checkCounts = CheckCounts(checks: checks)
@@ -217,15 +235,12 @@ public enum PullRequestQuery {
             reviewStatus: ReviewStatus(decision: n.reviewDecision),
             viewerApproved: n.viewerLatestReview?.state == "APPROVED",
             mergeable: MergeableState(graphQL: n.mergeStateStatus),
-            requestedReviewers: n.reviewRequests.nodes.compactMap { $0?.requestedReviewer?.login },
+            requestedReviewers: reviewRequests.reviewers,
             labels: n.labels.nodes.compactMap { $0 }.map { PRLabel(name: $0.name, color: $0.color) },
             checks: checks,
             checkSummary: checkCounts.status, // from the complete totals, not just the first 100 checks
             checkCounts: checkCounts,
-            requestedTeams: n.reviewRequests.nodes.compactMap { r in
-                guard let t = r?.requestedReviewer, let slug = t.slug else { return nil }
-                return ReviewTeam(org: t.organization?.login ?? repo.owner, slug: slug)
-            },
+            requestedTeams: reviewRequests.teams,
             labelTotal: n.labels.totalCount,
             reviewRequestTotal: n.reviewRequests.totalCount
         )
@@ -250,18 +265,22 @@ public enum PullRequestQuery {
 
     // MARK: API
 
-    public static func fetchRepo(_ repo: RepoId, first: Int = 30, after: String? = nil, client: GraphQLClient) async throws -> Page {
+    public static func fetchRepo(_ repo: RepoId, first: Int = 30, after: String? = nil, needsReviewers: Bool = false,
+                                 client: GraphQLClient) async throws -> Page {
         let r: RepoResponse = try await client.query(repoPRs, variables: [
-            "owner": repo.owner, "name": repo.name, "first": first, "after": after,
+            "owner": repo.owner, "name": repo.name, "first": first, "after": after, "needsReviewers": needsReviewers,
         ])
         guard let conn = r.repository?.pullRequests else { throw GraphQLError(messages: ["repository not found: \(repo.fullName)"]) }
         return page(conn, rateLimit: r.rateLimit)
     }
 
-    /// `scope` is e.g. "org:acme" or "author:octocat".
-    public static func fetchSearch(scope: String, first: Int = 30, after: String? = nil, client: GraphQLClient) async throws -> Page {
+    /// `scope` is e.g. "org:acme" or "author:octocat". `needsReviewers` fetches each PR's actual requested
+    /// reviewers, not just the count - only the inbox's review-requested search needs it, to tell a direct
+    /// request from a team one; everything else gets that lazily when a PR's detail view opens.
+    public static func fetchSearch(scope: String, first: Int = 30, after: String? = nil, needsReviewers: Bool = false,
+                                   client: GraphQLClient) async throws -> Page {
         let r: SearchResponse = try await client.query(searchPRs, variables: [
-            "q": searchPrefix + scope, "first": first, "after": after,
+            "q": searchPrefix + scope, "first": first, "after": after, "needsReviewers": needsReviewers,
         ])
         return page(r.search, rateLimit: r.rateLimit)
     }

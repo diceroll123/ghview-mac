@@ -127,11 +127,7 @@ struct PRDetailView: View {
                             }
                         }
                     }
-                    if !pr.requestedReviewers.isEmpty || !pr.requestedTeams.isEmpty {
-                        let names = pr.requestedReviewers + pr.requestedTeams.map { "\($0.fullName) (team)" }
-                        let more = pr.reviewersTruncated ? ", +\((pr.reviewRequestTotal ?? 0) - names.count) more" : ""
-                        Text("Reviewers: " + names.joined(separator: ", ") + more).font(.callout)
-                    }
+                    reviewersSection(pr)
                     Divider()
                     checksHeader(pr)
                     checksList(pr)
@@ -140,6 +136,39 @@ struct PRDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .task(id: model.checksKey(pr)) { await model.loadChecks(pr) }
+            .task(id: model.activityKey(pr)) { await model.loadReviewers(pr) }
+    }
+
+    /// Who was asked to review. The total comes with every PR, so this can tell at a glance whether there is
+    /// anything to show; the names themselves are fetched lazily unless the PR already carries them (the inbox's
+    /// review-requested search does, to tell a direct request from a team one).
+    @ViewBuilder
+    private func reviewersSection(_ pr: PR) -> some View {
+        let total = pr.reviewRequestTotal ?? 0
+        if total > 0 {
+            if !pr.requestedReviewers.isEmpty || !pr.requestedTeams.isEmpty {
+                reviewersText(reviewers: pr.requestedReviewers, teams: pr.requestedTeams, total: total)
+            } else {
+                switch model.reviewRequests[model.activityKey(pr)] {
+                case nil, .loading:
+                    HStack { ProgressView().controlSize(.small); Text("Loading reviewers...").foregroundStyle(.secondary) }
+                        .font(.callout)
+                case .failed(let message):
+                    HStack {
+                        Text(message).font(.caption).foregroundStyle(.secondary)
+                        Button("Retry") { Task { await model.loadReviewers(pr, force: true) } }
+                    }
+                case .loaded(let reviewers, let teams):
+                    reviewersText(reviewers: reviewers, teams: teams, total: total)
+                }
+            }
+        }
+    }
+
+    private func reviewersText(reviewers: [String], teams: [ReviewTeam], total: Int) -> some View {
+        let names = reviewers + teams.map { "\($0.fullName) (team)" }
+        let more = names.count < total ? ", +\(total - names.count) more" : ""
+        return Text("Reviewers: " + names.joined(separator: ", ") + more).font(.callout)
     }
 }
 

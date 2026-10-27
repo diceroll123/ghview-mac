@@ -129,7 +129,7 @@ public enum CombinedPRs {
     /// deliver; the call throws only when every chunk it tried failed. `onlyFailed` retries just those, and
     /// `skipFailed` leaves them alone so a caller paging to the end does not hammer a broken source.
     public static func fetchNext(_ pager: CombinedPager, existing: [PR], first: Int = 30, onlyFailed: Bool = false,
-                                 skipFailed: Bool = false, client: GraphQLClient) async throws -> Result {
+                                 skipFailed: Bool = false, needsReviewers: Bool = false, client: GraphQLClient) async throws -> Result {
         var pager = pager
         var queue = pager.pending.filter {
             (!onlyFailed || pager.chunks[$0].lastError != nil) && (!skipFailed || pager.chunks[$0].lastError == nil)
@@ -145,7 +145,7 @@ public enum CombinedPRs {
                 for (_, chunk) in round {
                     group.addTask {
                         do {
-                            return (chunk.id, .success(try await PullRequestQuery.fetchSearch(scope: chunk.scope, first: first, after: chunk.cursor, client: client)))
+                            return (chunk.id, .success(try await PullRequestQuery.fetchSearch(scope: chunk.scope, first: first, after: chunk.cursor, needsReviewers: needsReviewers, client: client)))
                         } catch { return (chunk.id, .failure(error)) }
                     }
                 }

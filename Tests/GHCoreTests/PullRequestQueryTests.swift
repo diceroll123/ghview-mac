@@ -66,7 +66,8 @@ final class LockedBox<T>: @unchecked Sendable {
     var repo = data["repository"] as! [String: Any]
     var prs = repo["pullRequests"] as! [String: Any]
     var nodes = prs["nodes"] as! [[String: Any]]
-    nodes[0]["reviewRequests"] = ["totalCount": 30, "nodes": [
+    nodes[0]["reviewRequests"] = ["totalCount": 30]
+    nodes[0]["reviewRequestNodes"] = ["nodes": [
         ["requestedReviewer": ["login": "alice"]],
         ["requestedReviewer": ["slug": "alice", "organization": ["login": "acme"]]],
     ]]

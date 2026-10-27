@@ -24,6 +24,12 @@ enum ChecksState {
     case failed(String)
 }
 
+enum ReviewersState {
+    case loading
+    case loaded(reviewers: [String], teams: [ReviewTeam])
+    case failed(String)
+}
+
 /// An action the user must confirm because it touches several PRs and cannot be undone.
 struct PendingAction: Identifiable {
     let id = UUID()
@@ -270,6 +276,7 @@ final class AppModel {
     var diffs: [String: DiffState] = [:]
     var activities: [String: ActivityState] = [:]
     var checkRuns: [String: ChecksState] = [:]
+    var reviewRequests: [String: ReviewersState] = [:]
     var isStarting = true
     /// Sources whose repository list is being fetched right now.
     var loadingRepoSources: Set<String> = []
@@ -689,7 +696,7 @@ final class AppModel {
         var rounds = 0
         do {
             repeat {
-                let r = try await CombinedPRs.fetchNext(pager, existing: all, skipFailed: true, client: client)
+                let r = try await CombinedPRs.fetchNext(pager, existing: all, skipFailed: true, needsReviewers: true, client: client)
                 pager = r.pager; all = r.prs; limits += r.rateLimits
                 rounds += 1
             } while pager.pending.contains(where: { pager.chunks[$0].lastError == nil }) && rounds < Self.maxInboxPages
@@ -1099,6 +1106,24 @@ final class AppModel {
             record("Checks: \(pr.repo.name)#\(pr.number)", rl)
             checkRuns[key] = .loaded(runs)
         } catch { checkRuns[key] = .failed(error.localizedDescription) }
+    }
+
+    // MARK: Reviewers (who was asked to review, shown in the detail view)
+
+    /// Keyed like activity: a new review request bumps `updatedAt` the same as any other change to the PR.
+    func loadReviewers(_ pr: PR, force: Bool = false) async {
+        guard let client else { return }
+        // Already carried on the PR itself (the inbox's review-requested search fetches it eagerly).
+        if !force, !pr.requestedReviewers.isEmpty || !pr.requestedTeams.isEmpty { return }
+        let key = activityKey(pr)
+        if !force, reviewRequests[key] != nil { return }
+        if reviewRequests.count > 30 { reviewRequests = reviewRequests.filter { $0.key == key } }
+        if case .loaded = reviewRequests[key] {} else { reviewRequests[key] = .loading }
+        do {
+            let (reviewers, teams, rl) = try await ReviewersQuery.fetch(pr.id, client: client)
+            record("Reviewers: \(pr.repo.name)#\(pr.number)", rl)
+            reviewRequests[key] = .loaded(reviewers: reviewers, teams: teams)
+        } catch { reviewRequests[key] = .failed(error.localizedDescription) }
     }
 
     /// Unsent comments, per PR. They live here rather than in the composer view so visiting another PR or tab

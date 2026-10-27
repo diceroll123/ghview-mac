@@ -21,7 +21,7 @@ private func node(_ n: Int, owner: String, created: String) -> String {
      "url":"https://x/\(n)","headRefName":"h","baseRefName":"main","headRefOid":"abc","additions":1,"deletions":1,
      "mergeStateStatus":"CLEAN","reviewDecision":null,"author":{"login":"a"},
      "repository":{"name":"r","owner":{"login":"\(owner)"}},"autoMergeRequest":null,"viewerLatestReview":null,
-     "comments":{"totalCount":0},"labels":{"nodes":[]},"reviewRequests":{"nodes":[]},"commits":{"nodes":[]}}
+     "comments":{"totalCount":0},"labels":{"nodes":[]},"reviewRequests":{"totalCount":0},"commits":{"nodes":[]}}
     """
 }
 private func page(_ nodes: [String], next: String?) -> Data {
