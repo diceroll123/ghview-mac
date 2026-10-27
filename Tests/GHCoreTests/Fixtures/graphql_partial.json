@@ -1,0 +1,1 @@
+{"data":{"ok":{"issueCount":49},"missing":null},"errors":[{"type":"NOT_FOUND","path":["missing"],"locations":[{"line":1,"column":92}],"message":"Could not resolve to a Repository with the name 'diceroll123/definitely-not-a-repo-xyz'."}]}

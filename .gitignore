@@ -1,0 +1,8 @@
+.build/
+.swiftpm/
+*.xcodeproj
+xcuserdata/
+DerivedData/
+GHView.app/
+.DS_Store
+.claude/
