@@ -18,6 +18,12 @@ enum ActivityState {
     case failed(String)
 }
 
+enum ChecksState {
+    case loading
+    case loaded([CheckRun])
+    case failed(String)
+}
+
 /// An action the user must confirm because it touches several PRs and cannot be undone.
 struct PendingAction: Identifiable {
     let id = UUID()
@@ -263,6 +269,7 @@ final class AppModel {
     var status: String?
     var diffs: [String: DiffState] = [:]
     var activities: [String: ActivityState] = [:]
+    var checkRuns: [String: ChecksState] = [:]
     var isStarting = true
     /// Sources whose repository list is being fetched right now.
     var loadingRepoSources: Set<String> = []
@@ -1074,6 +1081,24 @@ final class AppModel {
             activities[key] = .loaded(activity)
         }
         catch { activities[key] = .failed(error.localizedDescription) }
+    }
+
+    // MARK: Checks (individual check runs, shown in the detail view)
+
+    /// Keyed by head commit: a new push produces a new key, so the stored checks are refetched for it.
+    func checksKey(_ pr: PR) -> String { "\(pr.repo.fullName)#\(pr.number)@\(pr.headSha)" }
+
+    func loadChecks(_ pr: PR, force: Bool = false) async {
+        guard let client else { return }
+        let key = checksKey(pr)
+        if !force, checkRuns[key] != nil { return }
+        if checkRuns.count > 30 { checkRuns = checkRuns.filter { $0.key == key } }
+        if case .loaded = checkRuns[key] {} else { checkRuns[key] = .loading }
+        do {
+            let (runs, rl) = try await ChecksQuery.fetch(pr.id, client: client)
+            record("Checks: \(pr.repo.name)#\(pr.number)", rl)
+            checkRuns[key] = .loaded(runs)
+        } catch { checkRuns[key] = .failed(error.localizedDescription) }
     }
 
     /// Unsent comments, per PR. They live here rather than in the composer view so visiting another PR or tab

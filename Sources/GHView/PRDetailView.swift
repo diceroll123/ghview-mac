@@ -33,7 +33,9 @@ struct PRDetailView: View {
         }
     }
 
-    /// Title, a segmented progress bar, and a legend. Nothing but "No checks" when there are none.
+    /// Title, a segmented progress bar, and a legend. Nothing but "No checks" when there are none. Totals come
+    /// from `checkCounts`, which the list query already carries for every PR, so this renders instantly even
+    /// before the individual check runs below have loaded.
     @ViewBuilder
     private func checksHeader(_ pr: PR) -> some View {
         let counts = pr.checkCounts
@@ -49,9 +51,36 @@ struct PRDetailView: View {
         } else {
             ChecksBar(counts: counts, height: 8)
             ChecksLegend(counts: counts)
-            if pr.checks.count < counts.total {
-                Text(verbatim: "Listing the first \(pr.checks.count) of \(counts.total) checks")
-                    .font(.caption).foregroundStyle(.tertiary)
+        }
+    }
+
+    /// The individual check runs, fetched lazily (see `AppModel.loadChecks`). Shows nothing while a PR has no
+    /// checks at all, so it only ever appears alongside a non-empty `checksHeader`.
+    @ViewBuilder
+    private func checksList(_ pr: PR) -> some View {
+        let counts = pr.checkCounts
+        if !counts.isEmpty {
+            switch model.checkRuns[model.checksKey(pr)] {
+            case nil, .loading:
+                HStack { ProgressView().controlSize(.small); Text("Loading checks...").foregroundStyle(.secondary) }
+            case .failed(let message):
+                HStack {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                    Button("Retry") { Task { await model.loadChecks(pr, force: true) } }
+                }
+            case .loaded(let runs):
+                if runs.count < counts.total {
+                    Text(verbatim: "Listing the first \(runs.count) of \(counts.total) checks")
+                        .font(.caption).foregroundStyle(.tertiary)
+                }
+                ForEach(Self.actionableFirst(runs)) { check in
+                    HStack {
+                        CheckIcon(status: check.status)
+                        Text(check.name)
+                        Spacer()
+                        if let url = check.url.flatMap(URL.init) { Link("Open", destination: url) }
+                    }
+                }
             }
         }
     }
@@ -105,18 +134,12 @@ struct PRDetailView: View {
                     }
                     Divider()
                     checksHeader(pr)
-                    ForEach(Self.actionableFirst(pr.checks)) { check in
-                        HStack {
-                            CheckIcon(status: check.status)
-                            Text(check.name)
-                            Spacer()
-                            if let url = check.url.flatMap(URL.init) { Link("Open", destination: url) }
-                        }
-                    }
+                    checksList(pr)
                 }
                 .padding()
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .task(id: model.checksKey(pr)) { await model.loadChecks(pr) }
     }
 }
 

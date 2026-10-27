@@ -15,9 +15,19 @@ public enum PullRequestQuery {
       comments { totalCount }
       labels(first: 20) { totalCount nodes { name color } }
       reviewRequests(first: 20) { totalCount nodes { requestedReviewer { ... on User { login } ... on Team { slug organization { login } } } } }
-      commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) {
+      commits(last: 1) { nodes { commit { statusCheckRollup { contexts {
         checkRunCountsByState { state count }
         statusContextCountsByState { state count }
+      } } } } }
+    }
+    """
+
+    /// The individual check runs for one PR's head commit. Split out of `PRFields` because an org with heavy CI
+    /// can have hundreds of check runs per PR; the list view only needs the cheap per-state totals above, so this
+    /// is fetched lazily, one PR at a time, only when its detail view is shown.
+    static let checksFragment = """
+    fragment PRCheckNodes on PullRequest {
+      commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) {
         nodes {
         __typename
         ... on CheckRun { id databaseId name status conclusion detailsUrl checkSuite { workflowRun { workflow { name } } } }
@@ -107,7 +117,8 @@ public enum PullRequestQuery {
         struct Commit: Decodable, Sendable { var statusCheckRollup: Rollup? }
         struct Rollup: Decodable, Sendable { var contexts: Contexts }
         struct Contexts: Decodable, Sendable {
-            var nodes: [Context?]
+            /// Absent from the bulk list query, which only asks for the per-state totals below.
+            var nodes: [Context?]?
             var checkRunCountsByState: [StateCount]?
             var statusContextCountsByState: [StateCount]?
         }
@@ -159,10 +170,10 @@ public enum PullRequestQuery {
         }
     }
 
-    static func map(_ n: Node) -> PR? {
-        guard let number = n.number else { return nil } // search can return non-PR nodes as {}
-        let repo = RepoId(owner: n.repository.owner.login, name: n.repository.name)
-        let checks: [CheckRun] = (n.commits.nodes.first??.commit.statusCheckRollup?.contexts.nodes ?? []).compactMap { c in
+    /// Maps raw check/status-context nodes into `CheckRun`s. Shared by the bulk list decode (which usually has
+    /// none, since the list query doesn't fetch them) and `ChecksQuery`'s lazy per-PR fetch.
+    static func mapChecks(_ nodes: [Node.Context?]) -> [CheckRun] {
+        nodes.compactMap { c in
             guard let c else { return nil }
             if c.typename == "CheckRun" {
                 let base = c.name ?? "check"
@@ -174,6 +185,12 @@ public enum PullRequestQuery {
                 return CheckRun(id: c.id ?? name, name: name, url: c.targetUrl, status: statusContext(c.state))
             }
         }
+    }
+
+    static func map(_ n: Node) -> PR? {
+        guard let number = n.number else { return nil } // search can return non-PR nodes as {}
+        let repo = RepoId(owner: n.repository.owner.login, name: n.repository.name)
+        let checks = mapChecks(n.commits.nodes.first??.commit.statusCheckRollup?.contexts.nodes ?? [])
         // GitHub's own per-state totals are exact; counting the fetched checks is only a fallback.
         let rollupContexts = n.commits.nodes.first??.commit.statusCheckRollup?.contexts
         var checkCounts = CheckCounts(checks: checks)

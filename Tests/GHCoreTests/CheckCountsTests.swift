@@ -57,6 +57,19 @@ private func editContexts(_ json: inout [String: Any], prIndex: Int, _ edit: (in
     #expect(pr.checks.count == 34)                 // the list is still limited to what was fetched
 }
 
+@Test func bulkListDecodesWithoutCheckNodes() async throws {
+    // The real list query no longer asks for `contexts.nodes` at all; this is what GitHub sends back for it.
+    let prs = try await fetchChecksFixture { json in
+        for i in 0..<5 {
+            editContexts(&json, prIndex: i) { ctx in ctx.removeValue(forKey: "nodes") }
+        }
+    }
+    let failing = try #require(prs.first { $0.number == 522 })
+    #expect(failing.checks.isEmpty)
+    #expect(failing.checkCounts == CheckCounts(passed: 30, failed: 2, skipped: 2))
+    #expect(failing.checkSummary == .failing)
+}
+
 @Test func fallsBackToTheFetchedChecksWhenTotalsAreMissing() async throws {
     let prs = try await fetchChecksFixture { json in
         for i in 0..<5 {
