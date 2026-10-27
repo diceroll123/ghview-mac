@@ -566,6 +566,7 @@ struct SourceEditSheet: View {
 
 struct RateLimitDetail: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -595,7 +596,11 @@ struct RateLimitDetail: View {
             }
             Divider()
             session
-            Text("Viewing this panel does not use your quota.").font(.caption2).foregroundStyle(.tertiary)
+            HStack {
+                Text("Viewing this panel does not use your quota.").font(.caption2).foregroundStyle(.tertiary)
+                Spacer()
+                Button("Request log...") { openWindow(id: "log") }.font(.caption).buttonStyle(.link)
+            }
         }
         .padding(14)
         .frame(width: 380)

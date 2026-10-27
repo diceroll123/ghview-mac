@@ -22,7 +22,12 @@ struct GHViewApp: App {
             }
             SelectionCommands(model: model)
             SidebarCommands(model: model)
+            CallLogCommands()
         }
+        Window("Request Log", id: "log") {
+            CallLogView().environment(model)
+        }
+        .defaultSize(width: 900, height: 480)
         Settings {
             SettingsView().environment(model)
         }

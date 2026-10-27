@@ -81,6 +81,7 @@ final class AppModel {
         self.settings = AppSettings(defaults: defaults)
         self.countsURL = countsURL
         self.legacyCountsURL = countsURL
+        ghCalls.onChange { [weak self] calls in Task { @MainActor in self?.callLog = calls } }
         // Show the last account's numbers at once, before the network confirms who is signed in.
         if let last = defaults.string(forKey: Self.lastAccountKey).flatMap(Self.scope(fromID:)) {
             self.countsURL = SourceCountsCache.url(for: last, beside: countsURL)
@@ -255,6 +256,9 @@ final class AppModel {
     var sort: PRSort = .newest
     var rateLimit: RateLimit?
     var requestLog = RequestLog()
+    /// Every `gh` call this session with its outcome, newest first (the Request Log window).
+    var callLog: [GhCall] = []
+    @ObservationIgnored let ghCalls = GhCallLog()
     var rateBuckets: [RateBucket] = []
     var status: String?
     var diffs: [String: DiffState] = [:]
@@ -350,6 +354,7 @@ final class AppModel {
 
     /// Wires the model to a gh runner. `start()` uses the real CLI; tests pass a scripted one.
     func connect(_ runner: any GhRunner) {
+        let runner = LoggingGh(runner, log: ghCalls)
         gh = runner
         client = GraphQLClient(gh: runner)
         actions = PrActions(gh: runner)
