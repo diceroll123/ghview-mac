@@ -18,19 +18,20 @@ public enum PullRequestQuery {
       reviewRequestNodes: reviewRequests(first: 20) @include(if: $needsReviewers) {
         nodes { requestedReviewer { ... on User { login } ... on Team { slug organization { login } } } }
       }
-      commits(last: 1) { nodes { commit { statusCheckRollup { contexts {
-        checkRunCountsByState { state count }
-        statusContextCountsByState { state count }
-      } } } } }
+      commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
     }
     """
 
-    /// The individual check runs for one PR's head commit. Split out of `PRFields` because an org with heavy CI
-    /// can have hundreds of check runs per PR; the list view only needs the cheap per-state totals above, so this
-    /// is fetched lazily, one PR at a time, only when its detail view is shown.
+    /// The individual check runs and the exact per-state breakdown for one PR's head commit. Split out of
+    /// `PRFields` because computing this - even just the breakdown, without listing the checks - is real work for
+    /// GitHub when a commit has hundreds of check runs, unlike the single rollup `state` above (the same cheap
+    /// field GitHub itself uses for the dot next to a commit everywhere else). So this is fetched lazily, one PR
+    /// at a time, only when its detail view is shown.
     static let checksFragment = """
     fragment PRCheckNodes on PullRequest {
       commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) {
+        checkRunCountsByState { state count }
+        statusContextCountsByState { state count }
         nodes {
         __typename
         ... on CheckRun { id databaseId name status conclusion detailsUrl checkSuite { workflowRun { workflow { name } } } }
@@ -121,9 +122,9 @@ public enum PullRequestQuery {
         struct Reviewer: Decodable, Sendable { var login: String?; var slug: String?; var organization: Login? }
         struct CommitNode: Decodable, Sendable { var commit: Commit }
         struct Commit: Decodable, Sendable { var statusCheckRollup: Rollup? }
-        struct Rollup: Decodable, Sendable { var contexts: Contexts }
+        /// `state` is all the bulk list query asks for; `contexts` is only present in `ChecksQuery`'s response.
+        struct Rollup: Decodable, Sendable { var state: String?; var contexts: Contexts? }
         struct Contexts: Decodable, Sendable {
-            /// Absent from the bulk list query, which only asks for the per-state totals below.
             var nodes: [Context?]?
             var checkRunCountsByState: [StateCount]?
             var statusContextCountsByState: [StateCount]?
@@ -204,18 +205,22 @@ public enum PullRequestQuery {
         return (reviewers, teams)
     }
 
+    /// GitHub's own per-state totals are exact; counting the fetched checks is only a fallback for when they are
+    /// missing. Only `ChecksQuery`'s lazy fetch ever has `contexts` to pass here.
+    static func mapCheckCounts(_ contexts: Node.Contexts?, checks: [CheckRun]) -> CheckCounts {
+        guard let runs = contexts?.checkRunCountsByState, let statuses = contexts?.statusContextCountsByState else {
+            return CheckCounts(checks: checks)
+        }
+        return CheckCounts(checkRuns: runs.map { .init(state: $0.state, count: $0.count) },
+                           statuses: statuses.map { .init(state: $0.state, count: $0.count) })
+    }
+
     static func map(_ n: Node) -> PR? {
         guard let number = n.number else { return nil } // search can return non-PR nodes as {}
         let repo = RepoId(owner: n.repository.owner.login, name: n.repository.name)
-        let checks = mapChecks(n.commits.nodes.first??.commit.statusCheckRollup?.contexts.nodes ?? [])
         let reviewRequests = mapReviewRequests(n.reviewRequestNodes?.nodes ?? [], fallbackOrg: repo.owner)
-        // GitHub's own per-state totals are exact; counting the fetched checks is only a fallback.
-        let rollupContexts = n.commits.nodes.first??.commit.statusCheckRollup?.contexts
-        var checkCounts = CheckCounts(checks: checks)
-        if let runs = rollupContexts?.checkRunCountsByState, let statuses = rollupContexts?.statusContextCountsByState {
-            checkCounts = CheckCounts(checkRuns: runs.map { .init(state: $0.state, count: $0.count) },
-                                      statuses: statuses.map { .init(state: $0.state, count: $0.count) })
-        }
+        // The bulk query only asks for the rollup's own combined state, not a breakdown: see `checksFragment`.
+        let checkSummary = statusContext(n.commits.nodes.first??.commit.statusCheckRollup?.state)
         return PR(
             id: PrId(repo: repo, number: number),
             title: n.title,
@@ -237,9 +242,9 @@ public enum PullRequestQuery {
             mergeable: MergeableState(graphQL: n.mergeStateStatus),
             requestedReviewers: reviewRequests.reviewers,
             labels: n.labels.nodes.compactMap { $0 }.map { PRLabel(name: $0.name, color: $0.color) },
-            checks: checks,
-            checkSummary: checkCounts.status, // from the complete totals, not just the first 100 checks
-            checkCounts: checkCounts,
+            checks: [],
+            checkSummary: checkSummary,
+            checkCounts: CheckCounts(),
             requestedTeams: reviewRequests.teams,
             labelTotal: n.labels.totalCount,
             reviewRequestTotal: n.reviewRequests.totalCount

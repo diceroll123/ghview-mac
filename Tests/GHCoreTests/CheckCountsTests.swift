@@ -2,84 +2,88 @@ import Foundation
 import Testing
 @testable import GHCore
 
-private func fetchChecksFixture(mutate: (inout [String: Any]) -> Void = { _ in }) async throws -> [PR] {
-    var json = try #require(JSONSerialization.jsonObject(with: fixture("repo_prs_checks")) as? [String: Any])
-    mutate(&json)
-    let data = try JSONSerialization.data(withJSONObject: json)
-    let page = try await PullRequestQuery.fetchRepo(RepoId(owner: "diceroll123", name: "pymermaider"),
-                                                    client: GraphQLClient(gh: MockGh { _ in data }))
-    return page.prs
-}
-
-/// Walks to the first PR with checks and lets the caller change its rollup `contexts`.
-private func editContexts(_ json: inout [String: Any], prIndex: Int, _ edit: (inout [String: Any]) -> Void) {
-    var data = json["data"] as! [String: Any]
-    var repo = data["repository"] as! [String: Any]
-    var prs = repo["pullRequests"] as! [String: Any]
-    var nodes = prs["nodes"] as! [[String: Any]]
-    var pr = nodes[prIndex]
+/// Lifts one PR's `commits` block out of the recorded list fixture and feeds it to `ChecksQuery.fetch`, the
+/// lazy per-PR call that now carries the full breakdown and the individual check runs.
+private func fetchChecks(prNumber: Int, mutate: (inout [String: Any]) -> Void = { _ in }) async throws
+    -> (checks: [CheckRun], counts: CheckCounts) {
+    let json = try #require(JSONSerialization.jsonObject(with: fixture("repo_prs_checks")) as? [String: Any])
+    let data = json["data"] as! [String: Any]
+    let repo = data["repository"] as! [String: Any]
+    let prs = repo["pullRequests"] as! [String: Any]
+    let nodes = prs["nodes"] as! [[String: Any]]
+    var pr = try #require(nodes.first { $0["number"] as? Int == prNumber })
     var commits = pr["commits"] as! [String: Any]
     var cnodes = commits["nodes"] as! [[String: Any]]
     var commit = cnodes[0]["commit"] as! [String: Any]
     var rollup = commit["statusCheckRollup"] as! [String: Any]
     var contexts = rollup["contexts"] as! [String: Any]
-    edit(&contexts)
+    mutate(&contexts)
     rollup["contexts"] = contexts; commit["statusCheckRollup"] = rollup
     cnodes[0]["commit"] = commit; commits["nodes"] = cnodes; pr["commits"] = commits
-    nodes[prIndex] = pr; prs["nodes"] = nodes; repo["pullRequests"] = prs; data["repository"] = repo; json["data"] = data
+    let body: [String: Any] = ["data": ["rateLimit": data["rateLimit"]!, "repository": ["pullRequest": ["commits": pr["commits"]!]]]]
+    let bodyData = try JSONSerialization.data(withJSONObject: body)
+    let id = PrId(repo: RepoId(owner: "diceroll123", name: "pymermaider"), number: prNumber)
+    let (checks, counts, _) = try await ChecksQuery.fetch(id, client: GraphQLClient(gh: MockGh { _ in bodyData }))
+    return (checks, counts)
 }
 
 // MARK: real data
 
 @Test func realFixtureBreaksDownThirtyTwoTwo() async throws {
-    let prs = try await fetchChecksFixture()
-    let failing = try #require(prs.first { $0.number == 522 })
-    #expect(failing.checkCounts == CheckCounts(passed: 30, failed: 2, skipped: 2))
-    #expect(failing.checkCounts.total == 34 && failing.checkCounts.done == 34)
-    #expect(failing.checkCounts.summary == "30 passed, 2 failed, 2 skipped")
+    let failing = try await fetchChecks(prNumber: 522)
+    #expect(failing.counts == CheckCounts(passed: 30, failed: 2, skipped: 2))
+    #expect(failing.counts.total == 34 && failing.counts.done == 34)
+    #expect(failing.counts.summary == "30 passed, 2 failed, 2 skipped")
     #expect(failing.checks.count == 34 && failing.checks.filter { $0.status == .skipped }.count == 2)
-    #expect(failing.checkSummary == .failing)
+    #expect(failing.counts.status == .failing)
 
-    let clean = try #require(prs.first { $0.number == 540 })
-    #expect(clean.checkCounts == CheckCounts(passed: 33, skipped: 1))
-    #expect(clean.checkSummary == .passing)        // a skipped check does not stop a PR from passing
+    let clean = try await fetchChecks(prNumber: 540)
+    #expect(clean.counts == CheckCounts(passed: 33, skipped: 1))
+    #expect(clean.counts.status == .passing)        // a skipped check does not stop a PR from passing
 }
 
 @Test func countsComeFromGitHubTotalsBeyondTheFetchedChecks() async throws {
-    let prs = try await fetchChecksFixture { json in
-        editContexts(&json, prIndex: 0) { ctx in
-            ctx["checkRunCountsByState"] = [["state": "SUCCESS", "count": 150], ["state": "FAILURE", "count": 3],
-                                            ["state": "IN_PROGRESS", "count": 7]]
-        }
+    let result = try await fetchChecks(prNumber: 522) { ctx in
+        ctx["checkRunCountsByState"] = [["state": "SUCCESS", "count": 150], ["state": "FAILURE", "count": 3],
+                                        ["state": "IN_PROGRESS", "count": 7]]
     }
-    let pr = try #require(prs.first)
-    #expect(pr.checkCounts == CheckCounts(passed: 150, failed: 3, pending: 7))
-    #expect(pr.checks.count == 34)                 // the list is still limited to what was fetched
+    #expect(result.counts == CheckCounts(passed: 150, failed: 3, pending: 7))
+    #expect(result.checks.count == 34)                 // the list is still limited to what was fetched
 }
 
-@Test func bulkListDecodesWithoutCheckNodes() async throws {
-    // The real list query no longer asks for `contexts.nodes` at all; this is what GitHub sends back for it.
-    let prs = try await fetchChecksFixture { json in
-        for i in 0..<5 {
-            editContexts(&json, prIndex: i) { ctx in ctx.removeValue(forKey: "nodes") }
-        }
+/// The bulk list query no longer asks for `contexts` at all, only the rollup's own combined `state`: this is
+/// what GitHub sends back for that.
+@Test func bulkListOnlyCarriesTheRollupsCombinedState() async throws {
+    func pr(state: String?) async throws -> PR {
+        let body = Data("""
+        {"data":{"rateLimit":{"remaining":9,"limit":10,"cost":1,"resetAt":null},
+          "repository":{"pullRequests":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[
+            {"number":1,"title":"t","isDraft":false,"state":"OPEN","createdAt":"2026-01-01T00:00:00Z",
+             "updatedAt":"2026-01-01T00:00:00Z","url":"https://x/1","headRefName":"h","baseRefName":"main",
+             "headRefOid":"abc","additions":1,"deletions":1,"mergeStateStatus":"CLEAN","reviewDecision":null,
+             "author":{"login":"a"},"repository":{"name":"r","owner":{"login":"o"}},"autoMergeRequest":null,
+             "viewerLatestReview":null,"comments":{"totalCount":0},"labels":{"nodes":[]},
+             "reviewRequests":{"totalCount":0},
+             "commits":{"nodes":[{"commit":{"statusCheckRollup":\(state.map { #"{"state":"\#($0)"}"# } ?? "null")}}]}}
+          ]}}}}
+        """.utf8)
+        let page = try await PullRequestQuery.fetchRepo(RepoId(owner: "o", name: "r"), client: GraphQLClient(gh: MockGh { _ in body }))
+        return try #require(page.prs.first)
     }
-    let failing = try #require(prs.first { $0.number == 522 })
-    #expect(failing.checks.isEmpty)
-    #expect(failing.checkCounts == CheckCounts(passed: 30, failed: 2, skipped: 2))
+    let failing = try await pr(state: "FAILURE")
+    #expect(failing.checks.isEmpty && failing.checkCounts.isEmpty)
     #expect(failing.checkSummary == .failing)
+
+    #expect(try await pr(state: "SUCCESS").checkSummary == .passing)
+    #expect(try await pr(state: "PENDING").checkSummary == .pending)
+    #expect(try await pr(state: nil).checkSummary == .unknown)          // no commit status at all: no checks
 }
 
 @Test func fallsBackToTheFetchedChecksWhenTotalsAreMissing() async throws {
-    let prs = try await fetchChecksFixture { json in
-        for i in 0..<5 {
-            editContexts(&json, prIndex: i) { ctx in
-                ctx.removeValue(forKey: "checkRunCountsByState"); ctx.removeValue(forKey: "statusContextCountsByState")
-            }
-        }
+    let result = try await fetchChecks(prNumber: 522) { ctx in
+        ctx.removeValue(forKey: "checkRunCountsByState"); ctx.removeValue(forKey: "statusContextCountsByState")
     }
-    let pr = try #require(prs.first { $0.number == 522 })
-    #expect(pr.checkCounts == CheckCounts(passed: 30, failed: 2, skipped: 2))
+    #expect(result.counts == CheckCounts(passed: 30, failed: 2, skipped: 2))
 }
 
 // MARK: state mapping
@@ -190,19 +194,14 @@ private func editContexts(_ json: inout [String: Any], prIndex: Int, _ edit: (in
 }
 
 @Test func summaryAgreesWithTotalsWhenTheFailureIsBeyondTheFetchedChecks() async throws {
-    // The 34 fetched checks are green, but GitHub's totals say a check past the first page failed.
-    let prs = try await fetchChecksFixture { json in
-        editContexts(&json, prIndex: 1) { ctx in
-            ctx["checkRunCountsByState"] = [["state": "SUCCESS", "count": 120], ["state": "FAILURE", "count": 1]]
-            ctx["statusContextCountsByState"] = [] as [[String: Any]]
-        }
+    // The fetched checks are all green, but GitHub's totals say a check past the first page failed.
+    let result = try await fetchChecks(prNumber: 540) { ctx in
+        ctx["checkRunCountsByState"] = [["state": "SUCCESS", "count": 120], ["state": "FAILURE", "count": 1]]
+        ctx["statusContextCountsByState"] = [] as [[String: Any]]
     }
-    let pr = try #require(prs.dropFirst().first)
-    #expect(pr.checks.allSatisfy { $0.status != .failing })
-    #expect(pr.checkCounts.failed == 1)
-    #expect(pr.checkSummary == .failing)
-    #expect(PRFilter.parse("checks:failing").matches(pr))
-    #expect(!PRFilter.parse("checks:passing").matches(pr))
+    #expect(result.checks.allSatisfy { $0.status != .failing })
+    #expect(result.counts.failed == 1)
+    #expect(result.counts.status == .failing)
 }
 
 @Test func statusIsWorstFirstFromTheTotals() {

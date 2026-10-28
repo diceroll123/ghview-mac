@@ -23,9 +23,10 @@ private func checksResponse(prNumber: Int) throws -> Data {
 @Test func checksQueryFetchesTheIndividualRunsForOnePR() async throws {
     let data = try checksResponse(prNumber: 522)
     let id = PrId(repo: RepoId(owner: "diceroll123", name: "pymermaider"), number: 522)
-    let (checks, rateLimit) = try await ChecksQuery.fetch(id, client: GraphQLClient(gh: MockGh { _ in data }))
+    let (checks, counts, rateLimit) = try await ChecksQuery.fetch(id, client: GraphQLClient(gh: MockGh { _ in data }))
     #expect(checks.count == 34)
     #expect(checks.filter { $0.status == .failing }.count == 2)
+    #expect(counts == CheckCounts(passed: 30, failed: 2, skipped: 2))
     #expect(rateLimit.cost == 1)
 }
 

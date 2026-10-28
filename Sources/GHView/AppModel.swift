@@ -20,7 +20,7 @@ enum ActivityState {
 
 enum ChecksState {
     case loading
-    case loaded([CheckRun])
+    case loaded(checks: [CheckRun], counts: CheckCounts)
     case failed(String)
 }
 
@@ -1099,12 +1099,15 @@ final class AppModel {
         guard let client else { return }
         let key = checksKey(pr)
         if !force, checkRuns[key] != nil { return }
+        // The rollup's combined state (always present) is unknown only when there are no checks at all: nothing
+        // to fetch.
+        guard pr.checkSummary != .unknown else { checkRuns[key] = .loaded(checks: [], counts: CheckCounts()); return }
         if checkRuns.count > 30 { checkRuns = checkRuns.filter { $0.key == key } }
         if case .loaded = checkRuns[key] {} else { checkRuns[key] = .loading }
         do {
-            let (runs, rl) = try await ChecksQuery.fetch(pr.id, client: client)
+            let (runs, counts, rl) = try await ChecksQuery.fetch(pr.id, client: client)
             record("Checks: \(pr.repo.name)#\(pr.number)", rl)
-            checkRuns[key] = .loaded(runs)
+            checkRuns[key] = .loaded(checks: runs, counts: counts)
         } catch { checkRuns[key] = .failed(error.localizedDescription) }
     }
 
