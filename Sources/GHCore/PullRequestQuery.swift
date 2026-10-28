@@ -7,7 +7,7 @@ public enum PullRequestQuery {
     fragment PRFields on PullRequest {
       number title isDraft state createdAt updatedAt url
       headRefName baseRefName headRefOid additions deletions
-      mergeStateStatus reviewDecision
+      mergeable reviewDecision
       author { login }
       repository { name owner { login } }
       autoMergeRequest { enabledAt }
@@ -97,7 +97,7 @@ public enum PullRequestQuery {
         var headRefOid: String
         var additions: Int
         var deletions: Int
-        var mergeStateStatus: String?
+        var mergeable: String?
         var reviewDecision: String?
         var author: Login?
         var repository: Repository
@@ -239,7 +239,7 @@ public enum PullRequestQuery {
             autoMerge: n.autoMergeRequest != nil,
             reviewStatus: ReviewStatus(decision: n.reviewDecision),
             viewerApproved: n.viewerLatestReview?.state == "APPROVED",
-            mergeable: MergeableState(graphQL: n.mergeStateStatus),
+            mergeable: MergeableState(graphQL: n.mergeable),
             requestedReviewers: reviewRequests.reviewers,
             labels: n.labels.nodes.compactMap { $0 }.map { PRLabel(name: $0.name, color: $0.color) },
             checks: [],

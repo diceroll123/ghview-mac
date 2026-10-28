@@ -19,7 +19,7 @@ private func node(_ n: Int, owner: String, created: String) -> String {
     """
     {"number":\(n),"title":"t\(n)","isDraft":false,"state":"OPEN","createdAt":"\(created)","updatedAt":"\(created)",
      "url":"https://x/\(n)","headRefName":"h","baseRefName":"main","headRefOid":"abc","additions":1,"deletions":1,
-     "mergeStateStatus":"CLEAN","reviewDecision":null,"author":{"login":"a"},
+     "mergeable":"MERGEABLE","reviewDecision":null,"author":{"login":"a"},
      "repository":{"name":"r","owner":{"login":"\(owner)"}},"autoMergeRequest":null,"viewerLatestReview":null,
      "comments":{"totalCount":0},"labels":{"nodes":[]},"reviewRequests":{"totalCount":0},"commits":{"nodes":[]}}
     """

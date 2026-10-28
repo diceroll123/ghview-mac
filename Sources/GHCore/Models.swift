@@ -38,15 +38,14 @@ public enum ReviewStatus: String, Sendable, Codable {
 public enum MergeableState: String, Sendable, Codable {
     case clean, behind, dirty, blocked, unstable, hasHooks, draft, unknown
 
+    /// From GitHub's coarse `mergeable` field (MERGEABLE/CONFLICTING/UNKNOWN). The full breakdown
+    /// (`mergeStateStatus`, with BEHIND/BLOCKED/UNSTABLE/HAS_HOOKS/DRAFT) requires GitHub to actually compute
+    /// mergeability, which is too expensive to ask for on every PR in a list; this only ever distinguishes an
+    /// actual conflict from "nothing to flag yet".
     init(graphQL value: String?) {
         switch value {
-        case "CLEAN": self = .clean
-        case "BEHIND": self = .behind
-        case "DIRTY": self = .dirty
-        case "BLOCKED": self = .blocked
-        case "UNSTABLE": self = .unstable
-        case "HAS_HOOKS": self = .hasHooks
-        case "DRAFT": self = .draft
+        case "CONFLICTING": self = .dirty
+        case "MERGEABLE": self = .clean
         default: self = .unknown
         }
     }

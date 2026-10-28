@@ -60,7 +60,7 @@ private func fetchChecks(prNumber: Int, mutate: (inout [String: Any]) -> Void = 
           "repository":{"pullRequests":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[
             {"number":1,"title":"t","isDraft":false,"state":"OPEN","createdAt":"2026-01-01T00:00:00Z",
              "updatedAt":"2026-01-01T00:00:00Z","url":"https://x/1","headRefName":"h","baseRefName":"main",
-             "headRefOid":"abc","additions":1,"deletions":1,"mergeStateStatus":"CLEAN","reviewDecision":null,
+             "headRefOid":"abc","additions":1,"deletions":1,"mergeable":"MERGEABLE","reviewDecision":null,
              "author":{"login":"a"},"repository":{"name":"r","owner":{"login":"o"}},"autoMergeRequest":null,
              "viewerLatestReview":null,"comments":{"totalCount":0},"labels":{"nodes":[]},
              "reviewRequests":{"totalCount":0},
