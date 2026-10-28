@@ -60,15 +60,23 @@ struct AvatarView: View {
     var size: CGFloat = 18
 
     var body: some View {
-        let url = source.avatarURL(pixels: Int(size * 4)) // 2x retina with headroom
+        let url = source.avatarURL(pixels: Int(size * 4))  // 2x retina with headroom
         Group {
             if let image = store.image(for: url) {
                 Image(nsImage: image).resizable().interpolation(.high).scaledToFill()
             } else {
-                Image(systemName: { switch source { case .user: "person.fill"; case .org: "building.2.fill"; case .repo: "book.closed.fill" } }())
-                    .font(.system(size: size * 0.55)).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(.quaternary)
+                Image(
+                    systemName: {
+                        switch source {
+                        case .user: "person.fill";
+                        case .org: "building.2.fill";
+                        case .repo: "book.closed.fill"
+                        }
+                    }()
+                )
+                .font(.system(size: size * 0.55)).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.quaternary)
             }
         }
         .frame(width: size, height: size)

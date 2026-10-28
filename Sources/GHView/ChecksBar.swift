@@ -83,6 +83,6 @@ struct ChecksLegend: View {
                 .font(.caption)
             }
         }
-        .accessibilityHidden(true) // the bar already reads the same summary aloud
+        .accessibilityHidden(true)  // the bar already reads the same summary aloud
     }
 }

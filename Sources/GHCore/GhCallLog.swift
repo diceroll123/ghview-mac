@@ -67,7 +67,9 @@ public final class GhCallLog: @unchecked Sendable {
     }
 
     public func clear() {
-        let listener = lock.withLock { () -> (@Sendable ([GhCall]) -> Void)? in calls = []; return self.listener }
+        let listener = lock.withLock { () -> (@Sendable ([GhCall]) -> Void)? in
+            calls = []; return self.listener
+        }
         listener?([])
     }
 }
@@ -92,10 +94,13 @@ public struct LoggingGh: GhRunner {
             return data
         } catch {
             let outcome: GhCall.Outcome
-            if error is CancellationError { outcome = .cancelled }
-            else if let err = error as? GhError {
+            if error is CancellationError {
+                outcome = .cancelled
+            } else if let err = error as? GhError {
                 outcome = .failed(status: err.status, stderr: Self.clip(err.stderr.trimmingCharacters(in: .whitespacesAndNewlines), 300))
-            } else { outcome = .failed(status: -1, stderr: Self.clip("\(error)", 300)) }
+            } else {
+                outcome = .failed(status: -1, stderr: Self.clip("\(error)", 300))
+            }
             log.record(GhCall(date: start, duration: seconds(), summary: summary, detail: detail, outcome: outcome, bytes: 0))
             throw error
         }
@@ -119,10 +124,11 @@ public struct LoggingGh: GhRunner {
             let a = args[i]
             if (a == "-f" || a == "-F" || a == "--raw-field" || a == "--field"), i + 1 < args.count {
                 let pair = args[i + 1]
-                if pair.hasPrefix("query=") { query = String(pair.dropFirst("query=".count)) }
-                else { rest.append(clip(pair, 80)) }
+                if pair.hasPrefix("query=") { query = String(pair.dropFirst("query=".count)) } else { rest.append(clip(pair, 80)) }
                 i += 2
-            } else { rest.append(clip(a, 80)); i += 1 }
+            } else {
+                rest.append(clip(a, 80)); i += 1
+            }
         }
         guard args.count >= 2, args[0] == "api", args[1] == "graphql", let query else {
             return (clip(rest.joined(separator: " "), 220), nil)

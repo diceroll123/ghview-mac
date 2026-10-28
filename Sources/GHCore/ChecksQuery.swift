@@ -5,14 +5,14 @@ import Foundation
 /// a time, when its detail view opens.
 public enum ChecksQuery {
     static let query = """
-    query($owner: String!, $name: String!, $number: Int!) {
-      rateLimit { remaining limit cost resetAt used nodeCount }
-      repository(owner: $owner, name: $name) {
-        pullRequest(number: $number) { ...PRCheckNodes }
-      }
-    }
-    \(PullRequestQuery.checksFragment)
-    """
+        query($owner: String!, $name: String!, $number: Int!) {
+          rateLimit { remaining limit cost resetAt used nodeCount }
+          repository(owner: $owner, name: $name) {
+            pullRequest(number: $number) { ...PRCheckNodes }
+          }
+        }
+        \(PullRequestQuery.checksFragment)
+        """
 
     struct Response: Decodable, Sendable {
         var rateLimit: RateLimit
@@ -22,10 +22,13 @@ public enum ChecksQuery {
     }
 
     public static func fetch(_ id: PrId, client: GraphQLClient) async throws
-        -> (checks: [CheckRun], counts: CheckCounts, rateLimit: RateLimit) {
-        let r: Response = try await client.query(query, variables: [
-            "owner": id.repo.owner, "name": id.repo.name, "number": id.number,
-        ])
+        -> (checks: [CheckRun], counts: CheckCounts, rateLimit: RateLimit)
+    {
+        let r: Response = try await client.query(
+            query,
+            variables: [
+                "owner": id.repo.owner, "name": id.repo.name, "number": id.number,
+            ])
         guard let pr = r.repository?.pullRequest else {
             throw GraphQLError(messages: ["PR not found: \(id.repo.fullName)#\(id.number)"])
         }

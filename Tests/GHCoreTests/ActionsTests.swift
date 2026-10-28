@@ -2,17 +2,23 @@ import Foundation
 import Testing
 @testable import GHCore
 
-func samplePR(_ n: Int = 1, author: String = "alice", open: Bool = true, draft: Bool = false,
-              mergeable: MergeableState = .behind, autoMerge: Bool = false, approved: Bool = false) -> PR {
-    PR(id: PrId(repo: RepoId(owner: "o", name: "r"), number: n), title: "t", author: author, isDraft: draft,
-       isOpen: open, createdAt: Date(), updatedAt: Date(), url: "u", headRef: "h", baseRef: "main", headSha: "s",
-       additions: 0, deletions: 0, comments: 0, autoMerge: autoMerge, reviewStatus: .unknown,
-       viewerApproved: approved, mergeable: mergeable, requestedReviewers: [], labels: [], checks: [], checkSummary: .unknown)
+func samplePR(
+    _ n: Int = 1, author: String = "alice", open: Bool = true, draft: Bool = false,
+    mergeable: MergeableState = .behind, autoMerge: Bool = false, approved: Bool = false
+) -> PR {
+    PR(
+        id: PrId(repo: RepoId(owner: "o", name: "r"), number: n), title: "t", author: author, isDraft: draft,
+        isOpen: open, createdAt: Date(), updatedAt: Date(), url: "u", headRef: "h", baseRef: "main", headSha: "s",
+        additions: 0, deletions: 0, comments: 0, autoMerge: autoMerge, reviewStatus: .unknown,
+        viewerApproved: approved, mergeable: mergeable, requestedReviewers: [], labels: [], checks: [], checkSummary: .unknown)
 }
 
 func ctx(push: Bool = true, autoMerge: Bool = false, viewer: String = "me") -> ActionContext {
-    ActionContext(viewerLogin: viewer, repo: RepoInfo(id: RepoId(owner: "o", name: "r"), language: nil, pushedAt: nil,
-        stars: 0, openPRs: 0, isArchived: false, isPrivate: false, canPush: push, allowAutoMerge: autoMerge, hasIssues: true))
+    ActionContext(
+        viewerLogin: viewer,
+        repo: RepoInfo(
+            id: RepoId(owner: "o", name: "r"), language: nil, pushedAt: nil,
+            stars: 0, openPRs: 0, isArchived: false, isPrivate: false, canPush: push, allowAutoMerge: autoMerge, hasIssues: true))
 }
 
 @Test func permissionsAndNoOps() {
@@ -71,8 +77,9 @@ func ctx(push: Bool = true, autoMerge: Bool = false, viewer: String = "me") -> A
         return args.contains("--jq") ? Data("s\n".utf8) : Data()
     }
     let prs = [samplePR(1), samplePR(2, approved: true), samplePR(3)]
-    let summary = await BatchRunner.run(.approve, on: prs, actions: PrActions(gh: gh), options: ActionOptions(),
-                                        context: { _ in ctx() })
+    let summary = await BatchRunner.run(
+        .approve, on: prs, actions: PrActions(gh: gh), options: ActionOptions(),
+        context: { _ in ctx() })
     #expect(summary.done.count == 1)
     #expect(summary.skipped.count == 1)
     #expect(summary.failed.count == 1)
@@ -108,7 +115,7 @@ func ctx(push: Bool = true, autoMerge: Bool = false, viewer: String = "me") -> A
     #expect(sel.count == 4)
     sel.selectAll(visible: ids)
     #expect(sel.count == 5)
-    sel.selectAll(visible: ids)                      // a second Cmd-A does not toggle them off
+    sel.selectAll(visible: ids)  // a second Cmd-A does not toggle them off
     #expect(sel.count == 5)
     sel.clear()
     #expect(!sel.isSelectionMode)
@@ -118,13 +125,19 @@ func ctx(push: Bool = true, autoMerge: Bool = false, viewer: String = "me") -> A
 
 @Test func mergeDoesNotPassAutoAndCancelDisablesAuto() async throws {
     let calls = LockedBox<[[String]]>([])
-    let actions = PrActions(gh: MockGh { args in calls.update { $0 += [args] }; return Data() })
+    let actions = PrActions(
+        gh: MockGh { args in
+            calls.update { $0 += [args] }; return Data()
+        })
     // a repo that allows auto-merge still gets a plain merge command (no --auto) from .merge
     let merged = try await actions.perform(.merge, pr: samplePR(1), options: ActionOptions(mergeMethod: .rebase), ctx: ctx(autoMerge: true))
-    #expect(merged == .done("Merge requested for #1; result not confirmed"))   // nothing read back from this mock
+    #expect(merged == .done("Merge requested for #1; result not confirmed"))  // nothing read back from this mock
     let cancelled = try await actions.perform(.disableAutoMerge, pr: samplePR(2, autoMerge: true), options: ActionOptions(), ctx: ctx())
     #expect(cancelled == .done("Auto-merge cancelled for #2"))
-    #expect(calls.get().filter { $0.starts(with: ["pr", "merge"]) } == [["pr", "merge", "1", "-R", "o/r", "--rebase", "--match-head-commit", "s"], ["pr", "merge", "2", "-R", "o/r", "--disable-auto"]])
+    #expect(
+        calls.get().filter { $0.starts(with: ["pr", "merge"]) } == [
+            ["pr", "merge", "1", "-R", "o/r", "--rebase", "--match-head-commit", "s"], ["pr", "merge", "2", "-R", "o/r", "--disable-auto"],
+        ])
     let skipped = try await actions.perform(.autoMerge, pr: samplePR(3), options: ActionOptions(), ctx: ctx(autoMerge: false))
     #expect(skipped == .skipped("Auto-merge is not enabled for o/r"))
     #expect(calls.get().filter { $0.starts(with: ["pr", "merge"]) }.count == 2)
@@ -167,7 +180,7 @@ func ctx(push: Bool = true, autoMerge: Bool = false, viewer: String = "me") -> A
     let reason = Permissions.denial(.merge, pr: samplePR(), ctx: unknown)
     #expect(reason == Permissions.unknownPermissions(samplePR()))
     #expect(reason?.contains("No push access") == false)
-    #expect(Permissions.denial(.close, pr: samplePR(author: "me"), ctx: unknown) == nil)   // own PR needs no push access
+    #expect(Permissions.denial(.close, pr: samplePR(author: "me"), ctx: unknown) == nil)  // own PR needs no push access
     #expect(Permissions.denial(.close, pr: samplePR(author: "bob"), ctx: unknown) != nil)
     #expect(Permissions.denial(.approve, pr: samplePR(author: "bob"), ctx: unknown) == nil)
     #expect(Permissions.denial(.merge, pr: samplePR(), ctx: ctx(push: false))?.contains("No push access") == true)
@@ -180,14 +193,16 @@ func ctx(push: Bool = true, autoMerge: Bool = false, viewer: String = "me") -> A
         func node(_ o: String, _ n: String, _ perm: String) -> String {
             #"{"name":"\#(n)","owner":{"login":"\#(o)"},"primaryLanguage":null,"pushedAt":null,"stargazerCount":0,"isArchived":false,"isPrivate":false,"viewerPermission":"\#(perm)","autoMergeAllowed":true,"hasIssuesEnabled":true,"pullRequests":{"totalCount":0}}"#
         }
-        return Data(#"{"data":{"rateLimit":{"remaining":1,"limit":2,"cost":1,"resetAt":"2026-10-27T00:00:00Z"},"r0":\#(node("o", "a", "WRITE")),"r1":null,"r2":\#(node("o", "c", "READ"))}}"#.utf8)
+        return Data(
+            #"{"data":{"rateLimit":{"remaining":1,"limit":2,"cost":1,"resetAt":"2026-10-27T00:00:00Z"},"r0":\#(node("o", "a", "WRITE")),"r1":null,"r2":\#(node("o", "c", "READ"))}}"#
+                .utf8)
     }
     let ids = [RepoId(owner: "o", name: "a"), RepoId(owner: "o", name: "gone"), RepoId(owner: "o", name: "c")]
     let result = try await ReposQuery.fetchInfo(ids, client: GraphQLClient(gh: gh))
-    #expect(result.repos.map(\.id.name) == ["a", "c"])           // the repo GitHub did not return is simply absent
+    #expect(result.repos.map(\.id.name) == ["a", "c"])  // the repo GitHub did not return is simply absent
     #expect(result.repos.map(\.canPush) == [true, false])
     #expect(seen.get().contains("n1=gone"))
-    #expect(seen.get().filter { $0 == "-f" }.count >= 7)           // one call carried every repo
+    #expect(seen.get().filter { $0 == "-f" }.count >= 7)  // one call carried every repo
 }
 
 // MARK: merge methods
@@ -200,17 +215,21 @@ private func ctx(allowing methods: [MergeMethod]) -> ActionContext {
 
 @Test func aMergeOnlyRepositoryIsMergedWithAMergeCommit() async throws {
     let calls = LockedBox<[[String]]>([])
-    let actions = PrActions(gh: MockGh { args in calls.update { $0 += [args] }; return Data() })
+    let actions = PrActions(
+        gh: MockGh { args in
+            calls.update { $0 += [args] }; return Data()
+        })
     let out = try await actions.perform(.merge, pr: samplePR(), options: ActionOptions(mergeMethod: .squash), ctx: ctx(allowing: [.merge]))
     let merge = calls.get().first { $0.starts(with: ["pr", "merge"]) }
     #expect(merge?.contains("--merge") == true && merge?.contains("--squash") == false)
     guard case .done(let message) = out else { Issue.record("expected done"); return }
-    #expect(message.contains("squash is not allowed"))                // the substitution is not silent
+    #expect(message.contains("squash is not allowed"))  // the substitution is not silent
 }
 
 @Test func thePreferredMethodIsUsedWhenAllowedAndNothingIsAddedToTheMessage() async throws {
     let actions = PrActions(gh: MockGh { _ in Data() })
-    let out = try await actions.perform(.merge, pr: samplePR(), options: ActionOptions(mergeMethod: .rebase), ctx: ctx(allowing: [.squash, .rebase]))
+    let out = try await actions.perform(
+        .merge, pr: samplePR(), options: ActionOptions(mergeMethod: .rebase), ctx: ctx(allowing: [.squash, .rebase]))
     #expect(out == .done("Merge requested for #1; result not confirmed"))
 }
 
@@ -222,7 +241,7 @@ private func ctx(allowing methods: [MergeMethod]) -> ActionContext {
     #expect(resolve(.rebase, [.merge, .squash]) == .squash)
     #expect(resolve(.squash, [.rebase, .merge]) == .merge)
     #expect(resolve(.squash, []) == nil)
-    #expect(ActionOptions(mergeMethod: .rebase).method(for: nil) == .rebase)      // unknown settings keep the choice
+    #expect(ActionOptions(mergeMethod: .rebase).method(for: nil) == .rebase)  // unknown settings keep the choice
 }
 
 @Test func aRepositoryWithNoMergeMethodDisablesMerging() {
@@ -232,7 +251,8 @@ private func ctx(allowing methods: [MergeMethod]) -> ActionContext {
 }
 
 @Test func repositoryQueriesReadTheAllowedStrategies() throws {
-    let json = #"{"name":"r","owner":{"login":"o"},"primaryLanguage":null,"pushedAt":null,"stargazerCount":0,"isArchived":false,"isPrivate":false,"viewerPermission":"WRITE","autoMergeAllowed":true,"hasIssuesEnabled":true,"squashMergeAllowed":false,"mergeCommitAllowed":true,"rebaseMergeAllowed":false,"pullRequests":{"totalCount":0}}"#
+    let json =
+        #"{"name":"r","owner":{"login":"o"},"primaryLanguage":null,"pushedAt":null,"stargazerCount":0,"isArchived":false,"isPrivate":false,"viewerPermission":"WRITE","autoMergeAllowed":true,"hasIssuesEnabled":true,"squashMergeAllowed":false,"mergeCommitAllowed":true,"rebaseMergeAllowed":false,"pullRequests":{"totalCount":0}}"#
     let node = try GraphQLClient.decoder.decode(ReposQuery.Response.Node.self, from: Data(json.utf8))
     #expect(ReposQuery.map(node).allowedMergeMethods == [.merge])
     #expect(ReposQuery.query.contains("squashMergeAllowed") && ReposQuery.infoFields.contains("rebaseMergeAllowed"))
@@ -242,10 +262,12 @@ private func ctx(allowing methods: [MergeMethod]) -> ActionContext {
 
 private func mergeGh(view: String) -> (MockGh, LockedBox<[[String]]>) {
     let calls = LockedBox<[[String]]>([])
-    return (MockGh { args in
-        calls.update { $0 += [args] }
-        return args.starts(with: ["pr", "view"]) ? Data(view.utf8) : Data()
-    }, calls)
+    return (
+        MockGh { args in
+            calls.update { $0 += [args] }
+            return args.starts(with: ["pr", "view"]) ? Data(view.utf8) : Data()
+        }, calls
+    )
 }
 
 @Test func aMergeThatMergedIsReportedMerged() async throws {
@@ -271,7 +293,9 @@ private func mergeGh(view: String) -> (MockGh, LockedBox<[[String]]>) {
 @Test func enabledAutoMergeIsDoneForAutoMergeButQueuedForAPlainMerge() async throws {
     let (gh, _) = mergeGh(view: #"{"state":"OPEN","isInMergeQueue":false,"autoMergeRequest":{"enabledAt":"x"}}"#)
     let actions = PrActions(gh: gh)
-    #expect(try await actions.perform(.autoMerge, pr: samplePR(), options: ActionOptions(), ctx: ctx(autoMerge: true)) == .done("Auto-merge enabled for #1"))
+    #expect(
+        try await actions.perform(.autoMerge, pr: samplePR(), options: ActionOptions(), ctx: ctx(autoMerge: true))
+            == .done("Auto-merge enabled for #1"))
     guard case .queued = try await actions.perform(.merge, pr: samplePR(), options: ActionOptions(), ctx: ctx()) else {
         Issue.record("a plain merge that only enabled auto-merge is not done"); return
     }
@@ -279,7 +303,8 @@ private func mergeGh(view: String) -> (MockGh, LockedBox<[[String]]>) {
 
 @Test func batchesCountQueuedSeparately() async {
     let (gh, _) = mergeGh(view: #"{"state":"OPEN","isInMergeQueue":true,"autoMergeRequest":null}"#)
-    let summary = await BatchRunner.run(.merge, on: [samplePR(1), samplePR(2)], actions: PrActions(gh: gh), options: ActionOptions(), context: { _ in ctx() })
+    let summary = await BatchRunner.run(
+        .merge, on: [samplePR(1), samplePR(2)], actions: PrActions(gh: gh), options: ActionOptions(), context: { _ in ctx() })
     #expect(summary.done.isEmpty && summary.queued.count == 2)
     #expect(summary.message == "2 queued")
     #expect(summary.queuedIDs.count == 2)
@@ -290,7 +315,8 @@ private func mergeGh(view: String) -> (MockGh, LockedBox<[[String]]>) {
         if args.contains("2") { throw GhError(args: args, status: 1, stderr: "rate limited") }
         return Data()
     }
-    let summary = await BatchRunner.comment(Dependabot.comment("rebase"), on: [samplePR(1), samplePR(2), samplePR(3)], actions: PrActions(gh: gh))
+    let summary = await BatchRunner.comment(
+        Dependabot.comment("rebase"), on: [samplePR(1), samplePR(2), samplePR(3)], actions: PrActions(gh: gh))
     #expect(summary.done.count == 2)
     #expect(summary.failed.count == 1 && summary.failed[0].contains("o/r#2"))
     #expect(summary.failedIDs.map(\.number) == [2])
@@ -299,7 +325,7 @@ private func mergeGh(view: String) -> (MockGh, LockedBox<[[String]]>) {
 @Test func selectAllAddsToWhatIsHiddenWithoutDroppingIt() {
     let ids = (1...4).map { PrId(repo: RepoId(owner: "o", name: "r"), number: $0) }
     var sel = SelectionState()
-    sel.toggle(ids[3])                                // selected, then filtered out of view
+    sel.toggle(ids[3])  // selected, then filtered out of view
     sel.selectAll(visible: Array(ids[0...1]))
     #expect(sel.selected == Set([ids[0], ids[1], ids[3]]))
     #expect(sel.hidden(from: Array(ids[0...1])) == [ids[3]])
@@ -312,7 +338,7 @@ private func mergeGh(view: String) -> (MockGh, LockedBox<[[String]]>) {
         let reason = Permissions.denial(action, pr: samplePR(author: "me"), ctx: archived)
         #expect(reason?.contains("archived") == true, "\(action) should be refused")
     }
-    #expect(Permissions.denial(.close, pr: samplePR(author: "me"), ctx: ctx()) == nil)       // not archived: unchanged
+    #expect(Permissions.denial(.close, pr: samplePR(author: "me"), ctx: ctx()) == nil)  // not archived: unchanged
     #expect(RepoId(owner: "o", name: "r").url.absoluteString == "https://github.com/o/r")
     #expect(RepoId(owner: "o", name: "r").pullRequestsURL.absoluteString == "https://github.com/o/r/pulls")
 }
@@ -323,7 +349,7 @@ private func mergeGh(view: String) -> (MockGh, LockedBox<[[String]]>) {
     #expect(pr.shortHeadSha == "0a4ad0e")
     #expect(pr.headCommitURL?.absoluteString == "https://github.com/o/r/commit/0a4ad0e2263938d01e66c7aa6afd49bb7196bf09")
     pr.headSha = "abc"
-    #expect(pr.shortHeadSha == "abc")                                 // never longer than the hash itself
+    #expect(pr.shortHeadSha == "abc")  // never longer than the hash itself
 }
 
 @Test func repositoryQueriesReadWhetherARepoIsAFork() throws {
@@ -332,7 +358,7 @@ private func mergeGh(view: String) -> (MockGh, LockedBox<[[String]]>) {
     }
     let fork = try GraphQLClient.decoder.decode(ReposQuery.Response.Node.self, from: Data(node(#","isFork":true"#).utf8))
     let plain = try GraphQLClient.decoder.decode(ReposQuery.Response.Node.self, from: Data(node(#","isFork":false"#).utf8))
-    let old = try GraphQLClient.decoder.decode(ReposQuery.Response.Node.self, from: Data(node("").utf8))      // a response without the field
+    let old = try GraphQLClient.decoder.decode(ReposQuery.Response.Node.self, from: Data(node("").utf8))  // a response without the field
     #expect(ReposQuery.map(fork).isFork && !ReposQuery.map(plain).isFork && !ReposQuery.map(old).isFork)
     #expect(ReposQuery.query.contains("isFork") && ReposQuery.infoFields.contains("isFork"))
 }

@@ -27,8 +27,9 @@ actor SyntaxEngine {
         let key = "\(cacheKey)|\(file.id)|\(dark)"
         if let hit = cache[key] { return hit }
         guard let h = highlightr, file.lineCount <= Self.maxFileLines,
-              let lang = LanguageDetector.language(forPath: file.status == .deleted ? file.oldPath : file.newPath),
-              supported.contains(lang) else { return [:] }
+            let lang = LanguageDetector.language(forPath: file.status == .deleted ? file.oldPath : file.newPath),
+            supported.contains(lang)
+        else { return [:] }
 
         let theme = dark ? "github-dark" : "github"
         if currentTheme != theme { _ = h.setTheme(to: theme); currentTheme = theme }
@@ -45,12 +46,15 @@ actor SyntaxEngine {
         return result
     }
 
-    private func apply(_ stream: [(id: Int, text: String)], with h: Highlightr, lang: String,
-                       into result: inout [Int: AttributedString]) {
+    private func apply(
+        _ stream: [(id: Int, text: String)], with h: Highlightr, lang: String,
+        into result: inout [Int: AttributedString]
+    ) {
         guard !stream.isEmpty, !stream.contains(where: { $0.text.count > Self.maxLineLength }),
-              let colored = h.highlight(stream.map(\.text).joined(separator: "\n"), as: lang, fastRender: true) else { return }
+            let colored = h.highlight(stream.map(\.text).joined(separator: "\n"), as: lang, fastRender: true)
+        else { return }
         let lines = Self.split(colored)
-        guard lines.count == stream.count else { return } // never misalign colors with lines
+        guard lines.count == stream.count else { return }  // never misalign colors with lines
         for (entry, line) in zip(stream, lines) { result[entry.id] = line }
     }
 

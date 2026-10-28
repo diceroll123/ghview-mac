@@ -29,7 +29,8 @@ public struct PRFilter: Sendable, Equatable {
             let negated = body.hasPrefix("-")
             if negated { body = body.dropFirst() }
             if let colon = body.firstIndex(of: ":"),
-               let key = Key(rawValue: body[..<colon].lowercased()) {
+                let key = Key(rawValue: body[..<colon].lowercased())
+            {
                 let value = FilterQuery.unquote(String(body[body.index(after: colon)...]))
                 if !value.isEmpty {
                     f.clauses.append(Clause(key: key, value: value, negated: negated))
@@ -46,7 +47,8 @@ public struct PRFilter: Sendable, Equatable {
     /// to a team they belong to; teams are matched as `reviewer:org/team`.
     public func matches(_ pr: PR, me: String? = nil) -> Bool {
         for term in terms {
-            let hit = pr.title.lowercased().contains(term) || pr.author.lowercased().contains(term)
+            let hit =
+                pr.title.lowercased().contains(term) || pr.author.lowercased().contains(term)
                 || pr.headRef.lowercased().contains(term) || pr.labels.contains { $0.name.lowercased().contains(term) }
             if !hit { return false }
         }
@@ -123,9 +125,13 @@ public enum FilterQuery {
     public static func tokens(_ query: String) -> [String] {
         var out: [String] = [], current = "", inQuotes = false
         for ch in query {
-            if ch == "\"" { inQuotes.toggle(); current.append(ch) }
-            else if ch.isWhitespace && !inQuotes { if !current.isEmpty { out.append(current); current = "" } }
-            else { current.append(ch) }
+            if ch == "\"" {
+                inQuotes.toggle(); current.append(ch)
+            } else if ch.isWhitespace && !inQuotes {
+                if !current.isEmpty { out.append(current); current = "" }
+            } else {
+                current.append(ch)
+            }
         }
         if !current.isEmpty { out.append(current) }
         return out
@@ -151,8 +157,11 @@ public enum FilterQuery {
     /// Adds the token, or removes it if it is already there.
     public static func toggling(_ token: String, in query: String) -> String {
         var all = tokens(query)
-        if let i = all.firstIndex(where: { $0.caseInsensitiveCompare(token) == .orderedSame }) { all.remove(at: i) }
-        else { all.append(token) }
+        if let i = all.firstIndex(where: { $0.caseInsensitiveCompare(token) == .orderedSame }) {
+            all.remove(at: i)
+        } else {
+            all.append(token)
+        }
         return all.joined(separator: " ")
     }
 

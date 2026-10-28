@@ -16,7 +16,6 @@ public extension SourcesQuery {
     }
 }
 
-
 /// Everything the add-source dialog can show about a name before it is added.
 public struct SourceProfile: Sendable, Equatable {
     public enum Membership: Sendable, Equatable { case notApplicable, member, pending, notMember, unknown }
@@ -98,8 +97,9 @@ public extension SourcesQuery {
     /// The repository `owner/name` as GitHub spells it (one REST call), or `notFound`.
     private static func repository(_ name: String, gh: any GhRunner) async throws -> RepoInfoResponse {
         let data: Data
-        do { data = try await gh.run(["api", "repos/\(name)"]) }
-        catch let err as GhError where err.stderr.contains("404") || err.stderr.localizedCaseInsensitiveContains("not found") {
+        do { data = try await gh.run(["api", "repos/\(name)"]) } catch let err as GhError
+            where err.stderr.contains("404") || err.stderr.localizedCaseInsensitiveContains("not found")
+        {
             throw SourceCatalog.EditError.notFound(name)
         }
         return try GraphQLClient.decoder.decode(RepoInfoResponse.self, from: data)
@@ -120,8 +120,11 @@ public extension SourcesQuery {
         p.createdAt = info.createdAt
         p.profileURL = info.htmlURL.flatMap(URL.init(string:))
         if let c = await counts {
-            if let problem = c.error { p.accessProblem = problem; p.needsSSO = c.needsSSO }
-            else { p.openPRs = c.open; p.reviewRequested = c.reviewRequested }
+            if let problem = c.error {
+                p.accessProblem = problem; p.needsSSO = c.needsSSO
+            } else {
+                p.openPRs = c.open; p.reviewRequested = c.reviewRequested
+            }
         }
         return p
     }
@@ -132,8 +135,9 @@ public extension SourcesQuery {
     static func profile(name: String, gh: any GhRunner) async throws -> SourceProfile {
         if name.contains("/") { return try await repositoryProfile(name, gh: gh) }
         let data: Data
-        do { data = try await gh.run(["api", "users/\(name)"]) }
-        catch let err as GhError where err.stderr.contains("404") || err.stderr.localizedCaseInsensitiveContains("not found") {
+        do { data = try await gh.run(["api", "users/\(name)"]) } catch let err as GhError
+            where err.stderr.contains("404") || err.stderr.localizedCaseInsensitiveContains("not found")
+        {
             throw SourceCatalog.EditError.notFound(name)
         }
         let decoder = GraphQLClient.decoder
@@ -155,8 +159,11 @@ public extension SourcesQuery {
         p.createdAt = info.createdAt
         p.profileURL = info.htmlURL.flatMap(URL.init(string:))
         if let c = await counts {
-            if let problem = c.error { p.accessProblem = problem; p.needsSSO = c.needsSSO }
-            else { p.openPRs = c.open; p.reviewRequested = c.reviewRequested }
+            if let problem = c.error {
+                p.accessProblem = problem; p.needsSSO = c.needsSSO
+            } else {
+                p.openPRs = c.open; p.reviewRequested = c.reviewRequested
+            }
         }
         p.membership = await membership
         return p
@@ -166,8 +173,10 @@ public extension SourcesQuery {
         do {
             let state = try await gh.run(["api", "user/memberships/orgs/\(org)", "--jq", ".state"])
             return String(decoding: state, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) == "pending" ? .pending : .member
-        } catch let err as GhError where err.stderr.contains("404") || err.stderr.localizedCaseInsensitiveContains("not found")
-            || err.stderr.contains("403") {
+        } catch let err as GhError
+            where err.stderr.contains("404") || err.stderr.localizedCaseInsensitiveContains("not found")
+            || err.stderr.contains("403")
+        {
             return .notMember
         } catch { return .unknown }
     }

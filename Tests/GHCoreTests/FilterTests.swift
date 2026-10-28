@@ -2,9 +2,11 @@ import Foundation
 import Testing
 @testable import GHCore
 
-private func pr(_ n: Int, author: String = "alice", title: String = "t", draft: Bool = false, labels: [String] = [],
-                review: ReviewStatus = .unknown, checks: CheckStatus = .unknown, mergeable: MergeableState = .clean,
-                head: String = "feat/x", base: String = "main", reviewers: [String] = [], auto: Bool = false) -> PR {
+private func pr(
+    _ n: Int, author: String = "alice", title: String = "t", draft: Bool = false, labels: [String] = [],
+    review: ReviewStatus = .unknown, checks: CheckStatus = .unknown, mergeable: MergeableState = .clean,
+    head: String = "feat/x", base: String = "main", reviewers: [String] = [], auto: Bool = false
+) -> PR {
     var p = samplePR(n, author: author, draft: draft, mergeable: mergeable, autoMerge: auto)
     p.title = title; p.labels = labels.map { PRLabel(name: $0, color: "fff") }
     p.reviewStatus = review; p.checkSummary = checks; p.headRef = head; p.baseRef = base; p.requestedReviewers = reviewers
@@ -36,13 +38,13 @@ private func pr(_ n: Int, author: String = "alice", title: String = "t", draft: 
     let g = PRFilter.parse("author:alice author:bob label:bug -author:bob")
     #expect([a, b, c].filter { g.matches($0) }.map(\.number) == [1])
     #expect(PRFilter.parse("-author:alice").matches(b) && !PRFilter.parse("-author:alice").matches(a))
-    #expect(PRFilter.parse("AUTHOR:ALICE").matches(a)) // keys and values are case-insensitive
+    #expect(PRFilter.parse("AUTHOR:ALICE").matches(a))  // keys and values are case-insensitive
 }
 
 @Test func meResolvesAndBotsAreRecognised() {
     let mine = pr(1, author: "steve"), bot = pr(2, author: "dependabot[bot]")
     #expect(PRFilter.parse("author:@me").matches(mine, me: "Steve"))
-    #expect(!PRFilter.parse("author:@me").matches(mine, me: nil)) // unknown viewer matches nothing
+    #expect(!PRFilter.parse("author:@me").matches(mine, me: nil))  // unknown viewer matches nothing
     #expect(PRFilter.parse("is:bot").matches(bot) && !PRFilter.parse("is:bot").matches(mine))
     #expect(PRFilter.parse("-is:bot").matches(mine) && !PRFilter.parse("-is:bot").matches(bot))
     #expect(pr(3, author: "renovate").isBot && pr(4, author: "github-actions[bot]").isBot && !pr(5, author: "robot-fan").isBot)
@@ -56,15 +58,15 @@ private func pr(_ n: Int, author: String = "alice", title: String = "t", draft: 
     for q in ["is:ready", "review:approved", "checks:pending", "is:behind", "checks:none", "review:none"] {
         #expect(!PRFilter.parse(q).matches(p), "\(q)")
     }
-    #expect(PRFilter.parse("checks:none review:none").matches(pr(2))) // nothing reported, no review yet
+    #expect(PRFilter.parse("checks:none review:none").matches(pr(2)))  // nothing reported, no review yet
 }
 
 @Test func otherKeysAndUnknownTokensFallBackToText() {
     let p = pr(1, title: "hello:world", head: "renovate/nextjs", base: "develop", reviewers: ["Zed"])
     #expect(PRFilter.parse("base:develop branch:nextjs reviewer:zed repo:r").matches(p))
     #expect(!PRFilter.parse("base:main").matches(p))
-    #expect(PRFilter.parse("hello:world").matches(p))     // unknown key is plain text, so it still finds the title
-    #expect(PRFilter.parse("author:").matches(pr(2, title: "has author: in it"))) // empty value is plain text too
+    #expect(PRFilter.parse("hello:world").matches(p))  // unknown key is plain text, so it still finds the title
+    #expect(PRFilter.parse("author:").matches(pr(2, title: "has author: in it")))  // empty value is plain text too
     #expect(PRFilter.parse("-").isEmpty == false)
 }
 
@@ -95,7 +97,7 @@ private func pr(_ n: Int, author: String = "alice", title: String = "t", draft: 
     p.requestedReviewers = ["alice"]
     p.requestedTeams = [ReviewTeam(org: "acme", slug: "core")]
     #expect(PRFilter.parse("reviewer:alice").matches(p))
-    #expect(!PRFilter.parse("reviewer:core").matches(p))            // a team slug is not a user login
+    #expect(!PRFilter.parse("reviewer:core").matches(p))  // a team slug is not a user login
     #expect(PRFilter.parse("reviewer:acme/core").matches(p))
     #expect(!PRFilter.parse("reviewer:other/core").matches(p))
 
@@ -108,10 +110,10 @@ private func pr(_ n: Int, author: String = "alice", title: String = "t", draft: 
 @Test func truncatedLabelsAndReviewersAreNeverHiddenByAPositiveFilter() {
     var p = pr(1)
     p.labels = [PRLabel(name: "one", color: "ffffff")]
-    p.labelTotal = 35                                               // 34 more than we carry
+    p.labelTotal = 35  // 34 more than we carry
     #expect(p.labelsTruncated)
-    #expect(PRFilter.parse("label:deep-in-the-list").matches(p))    // might be label 30
-    #expect(PRFilter.parse("-label:deep-in-the-list").matches(p))   // a negation cannot exclude what we cannot see
+    #expect(PRFilter.parse("label:deep-in-the-list").matches(p))  // might be label 30
+    #expect(PRFilter.parse("-label:deep-in-the-list").matches(p))  // a negation cannot exclude what we cannot see
 
     p.labelTotal = 1
     #expect(!p.labelsTruncated)

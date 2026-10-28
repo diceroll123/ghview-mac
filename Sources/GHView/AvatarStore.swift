@@ -38,8 +38,10 @@ final class AvatarStore {
     static let firstRetry: TimeInterval = 30
     static let maxRetry: TimeInterval = 15 * 60
 
-    init(fetch: @escaping Fetch, now: @escaping () -> Date = Date.init,
-         decode: @escaping (Data) -> NSImage? = { NSImage(data: $0) }, limit: Int = 500, freshFor: TimeInterval = 24 * 3600) {
+    init(
+        fetch: @escaping Fetch, now: @escaping () -> Date = Date.init,
+        decode: @escaping (Data) -> NSImage? = { NSImage(data: $0) }, limit: Int = 500, freshFor: TimeInterval = 24 * 3600
+    ) {
         self.fetch = fetch
         self.now = now
         self.decode = decode
@@ -68,19 +70,19 @@ final class AvatarStore {
         let token = await tokenCache?.token()
 
         if images[url] == nil, let (data, _) = try? await fetch(url, .returnCacheDataDontLoad, token), let image = decode(data) {
-            store(image, for: url, fetchedAt: .distantPast) // shown now, but not trusted as current
+            store(image, for: url, fetchedAt: .distantPast)  // shown now, but not trusted as current
         }
         do {
             let (data, status) = try await fetch(url, .reloadRevalidatingCacheData, token)
             guard status == 200, let image = decode(data) else {
-                if status == 401 { await tokenCache?.invalidate() } // the cached token stopped working; refetch next time
+                if status == 401 { await tokenCache?.invalidate() }  // the cached token stopped working; refetch next time
                 recordFailure(url)
                 return
             }
             store(image, for: url, fetchedAt: now())
             failures[url] = nil
         } catch {
-            if !Task.isCancelled { recordFailure(url) } // a row scrolling away cancels its load; that is not a failure
+            if !Task.isCancelled { recordFailure(url) }  // a row scrolling away cancels its load; that is not a failure
         }
     }
 
@@ -88,7 +90,9 @@ final class AvatarStore {
         images[url] = Entry(image: image, fetchedAt: fetchedAt)
         useCounter += 1
         lastUsed[url] = useCounter
-        while images.count > limit, let oldest = lastUsed.filter({ images[$0.key] != nil && $0.key != url }).min(by: { $0.value < $1.value }) {
+        while images.count > limit,
+            let oldest = lastUsed.filter({ images[$0.key] != nil && $0.key != url }).min(by: { $0.value < $1.value })
+        {
             images[oldest.key] = nil
             lastUsed[oldest.key] = nil
         }

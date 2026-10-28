@@ -46,13 +46,18 @@ struct ActionBar: View {
             let canMerge = model.offers(.merge, for: targets)
             let canAuto = model.offers(.autoMerge, for: targets)
             if canMerge {
-                action(.merge, "Merge", "arrow.triangle.merge", tint: .purple, prominent: true, help: "Merge now (\(model.mergeMethodSummary(for: targets)))")
+                action(
+                    .merge, "Merge", "arrow.triangle.merge", tint: .purple, prominent: true,
+                    help: "Merge now (\(model.mergeMethodSummary(for: targets)))")
             }
             if allAutoMerging {
-                if model.offers(.disableAutoMerge, for: targets) { action(.disableAutoMerge, "Cancel auto-merge", "bolt.slash.fill", tint: .orange) }
+                if model.offers(.disableAutoMerge, for: targets) {
+                    action(.disableAutoMerge, "Cancel auto-merge", "bolt.slash.fill", tint: .orange)
+                }
             } else if canAuto {
-                action(.autoMerge, "Auto-merge", "bolt.fill", tint: .purple,
-                       help: "Merge automatically once checks pass and reviews are satisfied (\(model.mergeMethodSummary(for: targets)))")
+                action(
+                    .autoMerge, "Auto-merge", "bolt.fill", tint: .purple,
+                    help: "Merge automatically once checks pass and reviews are satisfied (\(model.mergeMethodSummary(for: targets)))")
             }
             if canMerge || canAuto { mergeMethodMenu }
             action(.rebase, "Rebase", "arrow.triangle.2.circlepath")
@@ -64,13 +69,23 @@ struct ActionBar: View {
                     ForEach(Dependabot.commands, id: \.key) { c in
                         Button(c.label) { model.dependabot(c.comment, on: targets) }
                     }
-                } label: { Label("Dependabot", systemImage: "shippingbox") }
-                    .menuStyle(.button).controlSize(.small).fixedSize()
+                } label: {
+                    Label("Dependabot", systemImage: "shippingbox")
+                }
+                .menuStyle(.button).controlSize(.small).fixedSize()
             }
-            Button { model.open(targets) } label: { Label("Open in browser", systemImage: "safari") }
-                .labelStyle(.iconOnly).help("Open in browser")
-            Button { model.copyURLs(targets) } label: { Label("Copy URL", systemImage: "link") }
-                .labelStyle(.iconOnly).help("Copy URL")
+            Button {
+                model.open(targets)
+            } label: {
+                Label("Open in browser", systemImage: "safari")
+            }
+            .labelStyle(.iconOnly).help("Open in browser")
+            Button {
+                model.copyURLs(targets)
+            } label: {
+                Label("Copy URL", systemImage: "link")
+            }
+            .labelStyle(.iconOnly).help("Copy URL")
         }
         .controlSize(.small)
         .buttonStyle(.bordered)
@@ -82,23 +97,33 @@ struct ActionBar: View {
             Picker("Merge method", selection: $model.mergeMethod) {
                 ForEach(MergeMethod.allCases, id: \.self) { method in
                     Text(method.title).tag(method)
-                        .disabled(!targets.isEmpty && !targets.contains { model.repoInfo(for: $0.repo)?.allowedMergeMethods.contains(method) ?? true })
+                        .disabled(
+                            !targets.isEmpty
+                                && !targets.contains { model.repoInfo(for: $0.repo)?.allowedMergeMethods.contains(method) ?? true })
                 }
             }
             .pickerStyle(.inline)
-        } label: { Label(model.mergeMethod.title, systemImage: "arrow.triangle.branch") }
-            .menuStyle(.button).controlSize(.small).fixedSize()
-            .help("How Merge and Auto-merge combine commits. Repositories that disallow it use the nearest allowed method.")
+        } label: {
+            Label(model.mergeMethod.title, systemImage: "arrow.triangle.branch")
+        }
+        .menuStyle(.button).controlSize(.small).fixedSize()
+        .help("How Merge and Auto-merge combine commits. Repositories that disallow it use the nearest allowed method.")
     }
 
     @ViewBuilder
-    private func action(_ action: PrAction, _ title: String, _ icon: String, tint: Color? = nil,
-                        prominent: Bool = false, help: String? = nil) -> some View {
+    private func action(
+        _ action: PrAction, _ title: String, _ icon: String, tint: Color? = nil,
+        prominent: Bool = false, help: String? = nil
+    ) -> some View {
         let reason = model.unavailableReason(action, for: targets)
-        let button = Button { model.perform(action, on: targets) } label: { Label(title, systemImage: icon) }
-            .tint(tint)
-            .disabled(reason != nil)
-            .help(reason ?? help ?? title)
+        let button = Button {
+            model.perform(action, on: targets)
+        } label: {
+            Label(title, systemImage: icon)
+        }
+        .tint(tint)
+        .disabled(reason != nil)
+        .help(reason ?? help ?? title)
         if prominent { button.buttonStyle(.borderedProminent) } else { button }
     }
 }

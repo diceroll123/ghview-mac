@@ -43,8 +43,10 @@ public struct SourceCatalog: Codable, Sendable, Equatable {
     /// Sources hidden by the empty-source rule. Derived from the latest counts, so it is never saved.
     public private(set) var autoHidden: Set<String> = []
 
-    public init(groups: [SourceGroup] = [], hidden: Set<String> = [], dismissed: Set<String> = [],
-                newlyDiscovered: Set<String> = [], forceShown: Set<String> = [], settings: SourceSettings = SourceSettings()) {
+    public init(
+        groups: [SourceGroup] = [], hidden: Set<String> = [], dismissed: Set<String> = [],
+        newlyDiscovered: Set<String> = [], forceShown: Set<String> = [], settings: SourceSettings = SourceSettings()
+    ) {
         self.groups = groups
         self.hidden = hidden
         self.dismissed = dismissed
@@ -145,9 +147,10 @@ public struct SourceCatalog: Codable, Sendable, Equatable {
         if name.contains("/") {
             let parts = name.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
             guard parts.count == 2,
-                  parts[0].range(of: loginPattern, options: .regularExpression) != nil,
-                  parts[1].range(of: #"^[A-Za-z0-9._-]{1,100}$"#, options: .regularExpression) != nil,
-                  parts[1] != ".", parts[1] != ".." else { throw EditError.invalidName(name) }
+                parts[0].range(of: loginPattern, options: .regularExpression) != nil,
+                parts[1].range(of: #"^[A-Za-z0-9._-]{1,100}$"#, options: .regularExpression) != nil,
+                parts[1] != ".", parts[1] != ".."
+            else { throw EditError.invalidName(name) }
             return name
         }
         guard name.range(of: loginPattern, options: .regularExpression) != nil else { throw EditError.invalidName(name) }
@@ -214,7 +217,8 @@ public struct SourceCatalog: Codable, Sendable, Equatable {
         if groups.isEmpty { groups = [SourceGroup(name: Self.accountsGroupName)] }
         // Repositories get a group of their own the first time one is added without choosing a group.
         if case .repo = source, groupID == nil,
-           !groups.contains(where: { $0.name.caseInsensitiveCompare(Self.repositoriesGroupName) == .orderedSame }) {
+            !groups.contains(where: { $0.name.caseInsensitiveCompare(Self.repositoriesGroupName) == .orderedSame })
+        {
             groups.append(SourceGroup(name: Self.repositoriesGroupName))
         }
         let i = groupID.flatMap { id in groups.firstIndex { $0.id == id } } ?? defaultGroupIndex(for: source)
@@ -225,7 +229,8 @@ public struct SourceCatalog: Codable, Sendable, Equatable {
     /// Swaps `old` for `new` in place, keeping its group, position and visibility.
     public mutating func replace(_ old: Source, with new: Source) throws {
         guard let g = groups.firstIndex(where: { $0.sources.contains(old) }),
-              let i = groups[g].sources.firstIndex(of: old) else { return }
+            let i = groups[g].sources.firstIndex(of: old)
+        else { return }
         if new.name.caseInsensitiveCompare(old.name) != .orderedSame, contains(new.name) {
             throw EditError.duplicate(new.name)
         }
@@ -250,11 +255,11 @@ public struct SourceCatalog: Codable, Sendable, Equatable {
     /// Moves sources to `groupID`, before the source at `index` of that group's full list (nil appends).
     public mutating func move(_ sources: [Source], toGroup groupID: UUID, at index: Int? = nil) {
         guard let dest = groups.firstIndex(where: { $0.id == groupID }) else { return }
-        let moving = allSources.filter { sources.contains($0) } // keep their current relative order
+        let moving = allSources.filter { sources.contains($0) }  // keep their current relative order
         guard !moving.isEmpty else { return }
         // Remember the anchor so removing the moved sources first cannot shift the insertion point.
         let anchor = index.flatMap { groups[dest].sources.indices.contains($0) ? groups[dest].sources[$0] : nil }
-        if let anchor, moving.contains(anchor) { return } // dropped onto itself (or onto another selected source)
+        if let anchor, moving.contains(anchor) { return }  // dropped onto itself (or onto another selected source)
         for i in groups.indices { groups[i].sources.removeAll { moving.contains($0) } }
         let at = anchor.flatMap { groups[dest].sources.firstIndex(of: $0) } ?? groups[dest].sources.count
         groups[dest].sources.insert(contentsOf: moving, at: at)
@@ -349,7 +354,8 @@ public struct SourceCatalog: Codable, Sendable, Equatable {
         guard settings.autoHideEmpty else { autoHidden = []; return }
         let candidates = allSources.filter { s in
             guard !hidden.contains(s.id), !forceShown.contains(s.id), !keeping.contains(s.id),
-                  let c = counts[s.id], c.error == nil else { return false }
+                let c = counts[s.id], c.error == nil
+            else { return false }
             return c.open == 0
         }.map(\.id)
         let visibleByHand = allSources.filter { !hidden.contains($0.id) }
@@ -363,7 +369,13 @@ public struct SourceCatalog: Codable, Sendable, Equatable {
     /// Sorts one group, or every group when `id` is nil.
     public mutating func sort(_ order: SortOrder = .alphabetical, group id: UUID? = nil) {
         func key(_ s: Source) -> String { s.name.lowercased() }
-        func rank(_ s: Source) -> Int { switch s { case .user: 0; case .org: 1; case .repo: 2 } }
+        func rank(_ s: Source) -> Int {
+            switch s {
+            case .user: 0;
+            case .org: 1;
+            case .repo: 2
+            }
+        }
         for i in groups.indices where id == nil || groups[i].id == id {
             switch order {
             case .alphabetical: groups[i].sources.sort { key($0) < key($1) }

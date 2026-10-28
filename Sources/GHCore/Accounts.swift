@@ -8,7 +8,6 @@ public enum Accounts {
     }
 }
 
-
 /// Who the app is acting as. Everything stored per user (sources, cached counts) is keyed by it, so signing in to
 /// another account never shows or edits the first account's data.
 public struct AccountScope: Hashable, Sendable {
@@ -36,11 +35,16 @@ public enum ConnectionProblem: Equatable, Sendable {
             let text = err.stderr.lowercased()
             if err.status == 127 { return .missingCLI }
             if text.contains("gh auth login") || text.contains("not logged in") || text.contains("bad credentials")
-                || text.contains("http 401") || text.contains("authentication") || text.contains("gh_token") {
+                || text.contains("http 401") || text.contains("authentication") || text.contains("gh_token")
+            {
                 return .notSignedIn
             }
-            if err.status == 124 || ["no such host", "network is unreachable", "dial tcp", "i/o timeout", "could not resolve",
-                                     "connection refused", "timed out", "offline"].contains(where: text.contains) {
+            if err.status == 124
+                || [
+                    "no such host", "network is unreachable", "dial tcp", "i/o timeout", "could not resolve",
+                    "connection refused", "timed out", "offline",
+                ].contains(where: text.contains)
+            {
                 return .offline
             }
         }

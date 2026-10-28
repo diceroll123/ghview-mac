@@ -201,7 +201,10 @@ final class AppModel {
     @ObservationIgnored var lastLoadedQuery: String?
 
     var isSearchDestination: Bool {
-        switch destination { case .search, .savedView: true; default: false }
+        switch destination {
+        case .search, .savedView: true;
+        default: false
+        }
     }
 
     /// The query a search destination starts with, which "reset" returns to.
@@ -216,7 +219,7 @@ final class AppModel {
     var selectedSourceIDs: Set<String> {
         get { if case .sources(let ids) = destination { ids } else { [] } }
         set {
-            guard newValue != selectedSourceIDs else { return } // not a change, so it must not clear another destination
+            guard newValue != selectedSourceIDs else { return }  // not a change, so it must not clear another destination
             destination = newValue.isEmpty ? nil : .sources(newValue)
         }
     }
@@ -231,8 +234,7 @@ final class AppModel {
     var selectedRepo: RepoId? {
         get { if case .repo(let r) = destination { r } else { nil } }
         set {
-            if let r = newValue { destination = .repo(r) }
-            else if selectedRepo != nil { destination = nil }
+            if let r = newValue { destination = .repo(r) } else if selectedRepo != nil { destination = nil }
         }
     }
     var sourceTitle: String {
@@ -291,9 +293,9 @@ final class AppModel {
     /// Sources whose repository list is being fetched right now.
     var loadingRepoSources: Set<String> = []
     var reposLoading: Bool { !loadingRepoSources.isEmpty }
-    var prsLoading = false       // first page, or a refresh
-    var prsLoadingMore = false   // subsequent pages
-    var hasLoadedPRs = false     // avoids flashing the empty state before data arrives
+    var prsLoading = false  // first page, or a refresh
+    var prsLoadingMore = false  // subsequent pages
+    var hasLoadedPRs = false  // avoids flashing the empty state before data arrives
     var loadFailed = false
     private var loadGeneration = 0
     var error: String?
@@ -331,7 +333,13 @@ final class AppModel {
         case .oldest: list.sort { $0.createdAt < $1.createdAt }
         case .recentlyUpdated: list.sort { $0.updatedAt > $1.updatedAt }
         case .needsReview:
-            func rank(_ s: ReviewStatus) -> Int { switch s { case .pending, .unknown: 0; case .changesRequested: 1; case .approved: 2 } }
+            func rank(_ s: ReviewStatus) -> Int {
+                switch s {
+                case .pending, .unknown: 0;
+                case .changesRequested: 1;
+                case .approved: 2
+                }
+            }
             list.sort { (rank($0.reviewStatus), $1.createdAt) < (rank($1.reviewStatus), $0.createdAt) }
         }
         return list
@@ -388,7 +396,7 @@ final class AppModel {
         gh = runner
         client = GraphQLClient(gh: runner)
         actions = PrActions(gh: runner)
-        AvatarStore.shared.configureAuth(gh: runner) // so avatars behind SAML SSO load with the same credentials
+        AvatarStore.shared.configureAuth(gh: runner)  // so avatars behind SAML SSO load with the same credentials
     }
 
     // MARK: Account
@@ -492,8 +500,12 @@ final class AppModel {
             if !discovered.isEmpty { catalog.save(to: defaults, key: catalogKey) }
             connection = .connected
             error = nil
-            if destination == nil { selectedSource = sources.first } // the content view's onChange loads its PRs
-            else { loadPRs() }
+            if destination == nil {
+                selectedSource = sources.first
+            }  // the content view's onChange loads its PRs
+            else {
+                loadPRs()
+            }
             Task { await loadExpandedRepos() }
             Task { await loadMissingRepoInfo() }
             Task { await loadCounts() }
@@ -505,33 +517,33 @@ final class AppModel {
         }
     }
 
-#if DEBUG
-    /// Loads fixed, fake data instead of connecting to `gh` at all - for taking screenshots. Debug builds only;
-    /// see scripts/generate-screenshot.sh for how this is triggered.
-    func startDemo() {
-        viewer = Viewer(login: "octocat", orgs: [DemoFixtures.orgLogin])
-        account = AccountScope(login: "octocat")
-        catalog = SourceCatalog.seeded(from: [.org(DemoFixtures.orgLogin)])
-        counts = DemoFixtures.counts
-        repoCache[Source.org(DemoFixtures.orgLogin).id] = (date: Date(), repos: DemoFixtures.repos, truncated: false)
-        prs = DemoFixtures.prs
-        hasLoadedPRs = true
-        rateLimit = DemoFixtures.rateLimit
-        settings.showRepoTree = true
-        layout.expandedSources.insert(Source.org(DemoFixtures.orgLogin).id)
-        selectedSource = Source.org(DemoFixtures.orgLogin)
-        browsingRepos = true
-        connection = .connected
-        isStarting = false
-    }
-#endif
+    #if DEBUG
+        /// Loads fixed, fake data instead of connecting to `gh` at all - for taking screenshots. Debug builds only;
+        /// see scripts/generate-screenshot.sh for how this is triggered.
+        func startDemo() {
+            viewer = Viewer(login: "octocat", orgs: [DemoFixtures.orgLogin])
+            account = AccountScope(login: "octocat")
+            catalog = SourceCatalog.seeded(from: [.org(DemoFixtures.orgLogin)])
+            counts = DemoFixtures.counts
+            repoCache[Source.org(DemoFixtures.orgLogin).id] = (date: Date(), repos: DemoFixtures.repos, truncated: false)
+            prs = DemoFixtures.prs
+            hasLoadedPRs = true
+            rateLimit = DemoFixtures.rateLimit
+            settings.showRepoTree = true
+            layout.expandedSources.insert(Source.org(DemoFixtures.orgLogin).id)
+            selectedSource = Source.org(DemoFixtures.orgLogin)
+            browsingRepos = true
+            connection = .connected
+            isStarting = false
+        }
+    #endif
 
     /// Fetches the repositories of `sources` that are not cached (or whose cache is over five minutes old). Each
     /// source stands alone: results are cached per source, and one source failing is recorded in `repoFailures`
     /// without touching the others.
     func loadRepos(for sources: [Source]) async {
         guard let client else { return }
-        let sources = sources.filter { $0.repoId == nil } // a repository source has no repository list of its own
+        let sources = sources.filter { $0.repoId == nil }  // a repository source has no repository list of its own
         let now = Date()
         let stale = sources.filter { s in
             !loadingRepoSources.contains(s.id) && (repoCache[s.id].map { now.timeIntervalSince($0.date) > 300 } ?? true)
@@ -545,7 +557,7 @@ final class AppModel {
             publishRepos()
             for l in fetched.lists { repoFailures[l.source.name] = nil }
             for (source, message) in fetched.failures { repoFailures[source.name] = message }
-        } catch {} // cancelled
+        } catch {}  // cancelled
     }
 
     /// Repositories of the sources shown expanded in the sidebar (restored from the saved layout on launch).
@@ -576,7 +588,8 @@ final class AppModel {
 
     /// Each source succeeds or fails on its own, so one inaccessible org does not hide the others' repositories.
     private func fetchRepoLists(_ sources: [Source], client: GraphQLClient) async throws
-        -> (lists: [RepoList], failures: [Source: String]) {
+        -> (lists: [RepoList], failures: [Source: String])
+    {
         let outcomes = await withTaskGroup(of: (Source, Swift.Result<RepoList, Error>).self) { group in
             for s in sources {
                 group.addTask {
@@ -656,7 +669,8 @@ final class AppModel {
     /// Every repository of `owner` (archived ones too, which the sidebar marks or hides), newest push first, up to `maxReposPerSource`. Past that the
     /// result is marked truncated so the UI can say so instead of silently dropping the rest.
     private nonisolated static func fetchAllRepos(owner: String, client: GraphQLClient) async throws
-        -> (repos: [RepoInfo], limits: [RateLimit], truncated: Bool) {
+        -> (repos: [RepoInfo], limits: [RateLimit], truncated: Bool)
+    {
         var repos: [RepoInfo] = [], limits: [RateLimit] = []
         var after: String?
         var more = false
@@ -696,7 +710,9 @@ final class AppModel {
         switch destination {
         case .sources: SearchScope.chunks(of: activeSources)
         case .search, .savedView:
-            { let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines); return q.isEmpty ? [] : [q] }()
+            {
+                let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines); return q.isEmpty ? [] : [q]
+            }()
         case .inbox, .repo, nil: []
         }
     }
@@ -951,14 +967,16 @@ final class AppModel {
                     var result = try await CombinedPRs.fetchNext(start, existing: existing, onlyFailed: onlyFailed, client: client)
                     var limits = result.rateLimits
                     var extra = 0
-                    while result.prs.count < reloadCount, result.pager.hasMore, result.failures.isEmpty, extra < Self.maxRefreshPages, !Task.isCancelled {
+                    while result.prs.count < reloadCount, result.pager.hasMore, result.failures.isEmpty, extra < Self.maxRefreshPages,
+                        !Task.isCancelled
+                    {
                         result = try await CombinedPRs.fetchNext(result.pager, existing: result.prs, client: client)
                         limits += result.rateLimits
                         extra += 1
                     }
                     // stale-response guard: the user may have moved on while this was in flight
                     guard !Task.isCancelled, gen == loadGeneration, key == loadKey else { return }
-                    prs = result.prs // CombinedPager.merge keeps one entry per PR
+                    prs = result.prs  // CombinedPager.merge keeps one entry per PR
                     prPager = result.pager
                     hasMorePRs = result.pager.hasMore
                     prFailures = result.failures
@@ -995,8 +1013,11 @@ final class AppModel {
             } catch {
                 if !Task.isCancelled, gen == loadGeneration {
                     // A search being typed is often briefly invalid: say so beside the box, not in an alert.
-                    if isSearchDestination { searchError = error.localizedDescription }
-                    else { self.error = error.localizedDescription; loadFailed = true }
+                    if isSearchDestination {
+                        searchError = error.localizedDescription
+                    } else {
+                        self.error = error.localizedDescription; loadFailed = true
+                    }
                 }
             }
         }
@@ -1018,7 +1039,7 @@ final class AppModel {
     var listEmptyState: ListEmptyState? {
         guard hasLoadedPRs, !prsLoading, visiblePRs.isEmpty else { return nil }
         if prs.isEmpty { return loadFailed ? .failed : .noOpenPRs }
-        return .noMatches // PRs exist, but the filter hides every one of them
+        return .noMatches  // PRs exist, but the filter hides every one of them
     }
 
     /// How a PR is named in the list: `#12` inside one repository, `repo#12` within one source, otherwise
@@ -1057,14 +1078,14 @@ final class AppModel {
 
     /// Retries only the sources that failed, keeping everything already loaded.
     func retryFailedSources() {
-        if destination?.isInbox == true { Task { await loadInbox() }; return } // the inbox reloads whole; it is two searches
+        if destination?.isInbox == true { Task { await loadInbox() }; return }  // the inbox reloads whole; it is two searches
         loadPRs(more: true, onlyFailed: true)
     }
 
     func refresh() {
         // Not connected: the normal refresh control reconnects instead of silently doing nothing.
         guard connection == .connected else { Task { await start() }; return }
-        Task { _ = await accountMatches() } // another `gh` login must not be used silently
+        Task { _ = await accountMatches() }  // another `gh` login must not be used silently
         Task { await loadCounts() }
         Task { await loadSearchCounts() }
         Task { await refreshRepos() }
@@ -1122,8 +1143,7 @@ final class AppModel {
             let activity = try await ActivityQuery.fetch(pr.id, client: client)
             if let rl = activity.rateLimit { record("Conversation: \(pr.repo.name)#\(pr.number)", rl) }
             activities[key] = .loaded(activity)
-        }
-        catch { activities[key] = .failed(error.localizedDescription) }
+        } catch { activities[key] = .failed(error.localizedDescription) }
     }
 
     // MARK: Checks (individual check runs, shown in the detail view)
@@ -1212,7 +1232,7 @@ final class AppModel {
         guard !sources.isEmpty else { return }
         countsLoading = true; defer { countsLoading = false }
         let (fresh, limits) = await SourceCountsQuery.fetch(sources, client: client)
-        guard !fresh.isEmpty else { return } // every batch failed; the badges are a convenience and must not interrupt anything
+        guard !fresh.isEmpty else { return }  // every batch failed; the badges are a convenience and must not interrupt anything
         counts.merge(fresh) { _, new in new }
         countedIDs.formUnion(fresh.keys)
         SourceCountsCache.save(counts, to: countsURL)
@@ -1245,8 +1265,8 @@ final class AppModel {
 
     private func persistSources() {
         catalog.save(to: defaults, key: catalogKey)
-        if Set(catalog.allSources.map(\.id)) != countedIDs { Task { await loadCounts() } } // sources added or removed
-        selectedSourceIDs.formIntersection(Set(sources.map(\.id)))   // hidden or deleted sources leave the selection
+        if Set(catalog.allSources.map(\.id)) != countedIDs { Task { await loadCounts() } }  // sources added or removed
+        selectedSourceIDs.formIntersection(Set(sources.map(\.id)))  // hidden or deleted sources leave the selection
         if destination == nil, let first = sources.first { selectedSource = first }
     }
 
@@ -1262,8 +1282,11 @@ final class AppModel {
         let name = try SourceCatalog.validate(rawName)
         if catalog.contains(name) { throw SourceCatalog.EditError.duplicate(name) }
         let source: Source
-        if let resolved, resolved.name.caseInsensitiveCompare(name) == .orderedSame { source = resolved }
-        else { source = try await SourcesQuery.resolve(name: name, gh: gh) }
+        if let resolved, resolved.name.caseInsensitiveCompare(name) == .orderedSame {
+            source = resolved
+        } else {
+            source = try await SourcesQuery.resolve(name: name, gh: gh)
+        }
         try catalog.add(source, to: group)
         persistSources()
         selectedSource = source
@@ -1274,8 +1297,11 @@ final class AppModel {
         let name = try SourceCatalog.validate(rawName)
         if name == old.name { return }
         let new: Source
-        if let resolved, resolved.name.caseInsensitiveCompare(name) == .orderedSame { new = resolved }
-        else { new = try await SourcesQuery.resolve(name: name, gh: gh) }
+        if let resolved, resolved.name.caseInsensitiveCompare(name) == .orderedSame {
+            new = resolved
+        } else {
+            new = try await SourcesQuery.resolve(name: name, gh: gh)
+        }
         try catalog.replace(old, with: new)
         if selectedSourceIDs.remove(old.id) != nil { selectedSourceIDs.insert(new.id) }
         persistSources()
@@ -1296,7 +1322,9 @@ final class AppModel {
 
     func removeSources(_ removed: [Source]) { catalog.remove(removed); persistSources() }
     /// Offsets index what the sidebar shows (the group's visible sources).
-    func removeSources(inGroup id: UUID, atOffsets offsets: IndexSet) { catalog.removeVisible(inGroup: id, atOffsets: offsets); persistSources() }
+    func removeSources(inGroup id: UUID, atOffsets offsets: IndexSet) {
+        catalog.removeVisible(inGroup: id, atOffsets: offsets); persistSources()
+    }
 
     func isSourceHidden(_ s: Source) -> Bool { catalog.isHidden(s) }
     func setSourcesHidden(_ list: [Source], _ hide: Bool) { catalog.setHidden(list, hide); persistSources() }
@@ -1328,8 +1356,9 @@ final class AppModel {
     /// A group dropped on another group's header goes before it.
     func dropGroup(_ dragged: UUID, before target: UUID) {
         guard dragged != target,
-              let from = catalog.groups.firstIndex(where: { $0.id == dragged }),
-              let to = catalog.groups.firstIndex(where: { $0.id == target }) else { return }
+            let from = catalog.groups.firstIndex(where: { $0.id == dragged }),
+            let to = catalog.groups.firstIndex(where: { $0.id == target })
+        else { return }
         catalog.moveGroups(fromOffsets: [from], toOffset: to)
         persistSources()
     }
@@ -1412,7 +1441,8 @@ final class AppModel {
         let options = ActionOptions(mergeMethod: mergeMethod)
         return targets.filter { pr in
             let ctx = ActionContext(viewerLogin: viewer.login, repo: repoInfo(for: pr.repo))
-            return Permissions.denial(action, pr: pr, ctx: ctx) == nil && Permissions.noOp(action, pr: pr, options: options, ctx: ctx) == nil
+            return Permissions.denial(action, pr: pr, ctx: ctx) == nil
+                && Permissions.noOp(action, pr: pr, options: options, ctx: ctx) == nil
         }
     }
 
@@ -1423,8 +1453,9 @@ final class AppModel {
         if !confirmed, [.merge, .autoMerge, .close].contains(action) {
             let will = runnable(action, in: targets.filter { !busy.contains($0.id) })
             if will.count > 1 {
-                pendingConfirmation = PendingAction(action: action, targets: will,
-                                                    methods: Dictionary(uniqueKeysWithValues: will.compactMap { pr in method(for: pr).map { (pr.id, $0) } }))
+                pendingConfirmation = PendingAction(
+                    action: action, targets: will,
+                    methods: Dictionary(uniqueKeysWithValues: will.compactMap { pr in method(for: pr).map { (pr.id, $0) } }))
                 return
             }
         }
@@ -1441,16 +1472,19 @@ final class AppModel {
         Task {
             defer { busy.subtract(ids); batchProgress = nil }
             guard await accountMatches() else { return }
-            let summary = await BatchRunner.run(action, on: fresh, actions: actions, options: options, progress: { done in
-                Task { @MainActor in if self.busy.isSuperset(of: ids) { self.batchProgress = BatchProgress(done: done, total: total) } }
-            }) { pr in
+            let summary = await BatchRunner.run(
+                action, on: fresh, actions: actions, options: options,
+                progress: { done in
+                    Task { @MainActor in if self.busy.isSuperset(of: ids) { self.batchProgress = BatchProgress(done: done, total: total) } }
+                }
+            ) { pr in
                 ActionContext(viewerLogin: viewer.login, repo: infos[pr.repo])
             }
             if !summary.failed.isEmpty { error = summary.failed.joined(separator: "\n") }
             // Deselect what this batch handled; failures stay selected for a retry, and a selection made
             // elsewhere while it ran is not touched.
             selection.deselect(ids.filter { !summary.failedIDs.contains($0) })
-            refresh() // PR state, and the repo and source counts that the action changed
+            refresh()  // PR state, and the repo and source counts that the action changed
         }
     }
 

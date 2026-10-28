@@ -25,14 +25,14 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(50)) }
     let (a, b) = (model.prs[0], model.prs[1])
     model.setDraftText("half-written thought", for: a.id)
 
-    model.focused = b.id                             // look at another PR
+    model.focused = b.id  // look at another PR
     model.setDraftText("something for b", for: b.id)
     model.focused = a.id
     #expect(model.draftText(for: a.id) == "half-written thought")
     #expect(model.draftText(for: b.id) == "something for b")
 
     model.setDraftText("", for: b.id)
-    #expect(model.drafts[b.id] == nil)               // emptied drafts do not pile up
+    #expect(model.drafts[b.id] == nil)  // emptied drafts do not pile up
 }
 
 @Test @MainActor func aLatePostCompletionOnlyTouchesItsOwnDraft() async {
@@ -44,12 +44,12 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(50)) }
     let post = Task { await model.postDraft(for: a) }
     await gh.waitForRequest("pr:comment:\(a.number)")
     #expect(model.drafts[a.id]?.posting == true)
-    model.focused = b.id                             // navigate away while the request is out
+    model.focused = b.id  // navigate away while the request is out
     model.setDraftText("typing in b", for: b.id)
 
     await gh.release("pr:comment:\(a.number)")
     await post.value
-    #expect(model.drafts[a.id] == nil)               // a's draft is cleared by a's own success
+    #expect(model.drafts[a.id] == nil)  // a's draft is cleared by a's own success
     #expect(model.draftText(for: b.id) == "typing in b")
     #expect(model.drafts[b.id]?.error == nil)
 }

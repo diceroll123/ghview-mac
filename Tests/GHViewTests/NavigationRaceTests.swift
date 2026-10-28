@@ -25,14 +25,14 @@ private let repoB = RepoId(owner: "diceroll123", name: "other")
     await gh.waitForRequest("prs:diceroll123/ghview")
     #expect(model.prsLoading)
 
-    model.destination = .sources(["b"])             // the user clicks a source instead
+    model.destination = .sources(["b"])  // the user clicks a source instead
     model.loadPRs()
     await gh.waitForRequest("search:org:b")
 
-    await gh.release("prs:diceroll123/ghview")      // the old repo answers first
+    await gh.release("prs:diceroll123/ghview")  // the old repo answers first
     await settle()
     #expect(model.prs.isEmpty)
-    #expect(model.prsLoading)                       // still waiting for what is actually selected
+    #expect(model.prsLoading)  // still waiting for what is actually selected
 
     await gh.release("search:org:b")
     await settle()
@@ -47,7 +47,7 @@ private let repoB = RepoId(owner: "diceroll123", name: "other")
     await gh.waitForRequest("prs:diceroll123/ghview")
 
     model.destination = nil
-    model.loadPRs()                                 // what the view does when the destination changes
+    model.loadPRs()  // what the view does when the destination changes
     #expect(!model.prsLoading)
 
     await gh.release("prs:diceroll123/ghview")
@@ -63,7 +63,7 @@ private let repoB = RepoId(owner: "diceroll123", name: "other")
     await gh.waitForRequest("search:org:a")
     #expect(model.prsLoading)
 
-    model.destination = .savedView(UUID())          // a view that no longer exists: nothing to load, but it must still cancel the old load
+    model.destination = .savedView(UUID())  // a view that no longer exists: nothing to load, but it must still cancel the old load
     model.loadPRs()
     #expect(!model.prsLoading)
 
@@ -85,7 +85,7 @@ private let repoB = RepoId(owner: "diceroll123", name: "other")
     model.loadPRs()
     await gh.waitForRequest("search:org:a", count: 2)
 
-    await gh.release("search:org:a")                // the first A finishes, but a newer request owns the screen
+    await gh.release("search:org:a")  // the first A finishes, but a newer request owns the screen
     await settle()
     #expect(model.prs.isEmpty && model.prsLoading)
 
@@ -105,13 +105,13 @@ private let repoB = RepoId(owner: "diceroll123", name: "other")
     model.loadPRs()
     await gh.waitForRequest("prs:diceroll123/ghview")
     model.destination = .repo(repoB)
-    model.loadPRs()                                 // a different repo supersedes it
+    model.loadPRs()  // a different repo supersedes it
     await gh.waitForRequest("prs:diceroll123/other")
 
-    await gh.release("prs:diceroll123/ghview")      // the old repo answers first
+    await gh.release("prs:diceroll123/ghview")  // the old repo answers first
     await settle()
     #expect(model.prs.isEmpty)
-    #expect(model.prsLoading)                       // still waiting on the repo that is actually selected
+    #expect(model.prsLoading)  // still waiting on the repo that is actually selected
 
     await gh.release("prs:diceroll123/other")
     await settle()
@@ -122,8 +122,8 @@ private let repoB = RepoId(owner: "diceroll123", name: "other")
 @Test @MainActor func theSourceSelectionShimNeverClearsAnotherDestination() {
     let model = makeModel(GatedGh())
     model.destination = .repo(repoA)
-    model.selectedSourceIDs = []                    // no change: there are no sources selected anyway
-    model.selectedSourceIDs.formIntersection(["a"]) // what hiding or deleting a source does
+    model.selectedSourceIDs = []  // no change: there are no sources selected anyway
+    model.selectedSourceIDs.formIntersection(["a"])  // what hiding or deleting a source does
     #expect(model.destination == .repo(repoA))
 
     model.selectedSourceIDs = ["a", "b"]

@@ -46,8 +46,10 @@ final class GatedGh: GhRunner, Sendable {
     /// Answers a request itself instead of with the canned data; return nil to fall through.
     private let override: @Sendable ([String]) throws -> Data?
 
-    init(gate: @escaping @Sendable (String) -> Bool = { _ in true },
-         override: @escaping @Sendable ([String]) throws -> Data? = { _ in nil }) {
+    init(
+        gate: @escaping @Sendable (String) -> Bool = { _ in true },
+        override: @escaping @Sendable ([String]) throws -> Data? = { _ in nil }
+    ) {
         self.gate = gate
         self.override = override
     }
@@ -101,12 +103,13 @@ final class GatedGh: GhRunner, Sendable {
     static func response(_ tag: String, _ args: [String]) throws -> Data {
         if tag.hasPrefix("repos:") {
             let owner = String(tag.dropFirst(6))
-            return Data("""
-            {"data":{"rateLimit":\(rate),"repositoryOwner":{"repositories":{"pageInfo":{"hasNextPage":false,"endCursor":null},
-            "nodes":[{"name":"\(owner)-repo","owner":{"login":"\(owner)"},"primaryLanguage":null,"pushedAt":"2026-10-26T20:34:12Z",
-            "stargazerCount":0,"isArchived":false,"isPrivate":false,"viewerPermission":"ADMIN","autoMergeAllowed":true,
-            "hasIssuesEnabled":true,"pullRequests":{"totalCount":1}}]}}}}
-            """.utf8)
+            return Data(
+                """
+                {"data":{"rateLimit":\(rate),"repositoryOwner":{"repositories":{"pageInfo":{"hasNextPage":false,"endCursor":null},
+                "nodes":[{"name":"\(owner)-repo","owner":{"login":"\(owner)"},"primaryLanguage":null,"pushedAt":"2026-10-26T20:34:12Z",
+                "stargazerCount":0,"isArchived":false,"isPrivate":false,"viewerPermission":"ADMIN","autoMergeAllowed":true,
+                "hasIssuesEnabled":true,"pullRequests":{"totalCount":1}}]}}}}
+                """.utf8)
         }
         if tag.hasPrefix("pr:") { return Data() }
         var json = try fixtureJSON()

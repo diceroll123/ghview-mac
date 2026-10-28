@@ -17,7 +17,9 @@ private func pagedRepos(total: Int) -> @Sendable ([String]) -> Data? {
         let start = Int(args.first { $0.hasPrefix("after=") }.map { String($0.dropFirst(6)) } ?? "0") ?? 0
         let end = min(start + first, total)
         let nodes = (start..<end).map { repoNode("big", "r\($0)") }.joined(separator: ",")
-        return Data(#"{"data":{"rateLimit":\#(rate),"repositoryOwner":{"repositories":{"pageInfo":{"hasNextPage":\#(end < total),"endCursor":"\#(end)"},"nodes":[\#(nodes)]}}}}"#.utf8)
+        return Data(
+            #"{"data":{"rateLimit":\#(rate),"repositoryOwner":{"repositories":{"pageInfo":{"hasNextPage":\#(end < total),"endCursor":"\#(end)"},"nodes":[\#(nodes)]}}}}"#
+                .utf8)
     }
 }
 
@@ -46,7 +48,7 @@ private func pagedRepos(total: Int) -> @Sendable ([String]) -> Data? {
 private func infoOverride(permission: String?) -> @Sendable ([String]) -> Data? {
     { args in
         guard args.contains(where: { $0.hasPrefix("o0=") }) else { return nil }
-        guard let permission else { return Data("{}".utf8) }   // no data: the request fails
+        guard let permission else { return Data("{}".utf8) }  // no data: the request fails
         return Data(#"{"data":{"rateLimit":\#(rate),"r0":\#(repoNode("diceroll123", "ghview", perm: permission))}}"#.utf8)
     }
 }

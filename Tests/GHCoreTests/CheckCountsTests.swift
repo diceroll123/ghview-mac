@@ -5,7 +5,8 @@ import Testing
 /// Lifts one PR's `commits` block out of the recorded list fixture and feeds it to `ChecksQuery.fetch`, the
 /// lazy per-PR call that now carries the full breakdown and the individual check runs.
 private func fetchChecks(prNumber: Int, mutate: (inout [String: Any]) -> Void = { _ in }) async throws
-    -> (checks: [CheckRun], counts: CheckCounts) {
+    -> (checks: [CheckRun], counts: CheckCounts)
+{
     let json = try #require(JSONSerialization.jsonObject(with: fixture("repo_prs_checks")) as? [String: Any])
     let data = json["data"] as! [String: Any]
     let repo = data["repository"] as! [String: Any]
@@ -39,34 +40,37 @@ private func fetchChecks(prNumber: Int, mutate: (inout [String: Any]) -> Void = 
 
     let clean = try await fetchChecks(prNumber: 540)
     #expect(clean.counts == CheckCounts(passed: 33, skipped: 1))
-    #expect(clean.counts.status == .passing)        // a skipped check does not stop a PR from passing
+    #expect(clean.counts.status == .passing)  // a skipped check does not stop a PR from passing
 }
 
 @Test func countsComeFromGitHubTotalsBeyondTheFetchedChecks() async throws {
     let result = try await fetchChecks(prNumber: 522) { ctx in
-        ctx["checkRunCountsByState"] = [["state": "SUCCESS", "count": 150], ["state": "FAILURE", "count": 3],
-                                        ["state": "IN_PROGRESS", "count": 7]]
+        ctx["checkRunCountsByState"] = [
+            ["state": "SUCCESS", "count": 150], ["state": "FAILURE", "count": 3],
+            ["state": "IN_PROGRESS", "count": 7],
+        ]
     }
     #expect(result.counts == CheckCounts(passed: 150, failed: 3, pending: 7))
-    #expect(result.checks.count == 34)                 // the list is still limited to what was fetched
+    #expect(result.checks.count == 34)  // the list is still limited to what was fetched
 }
 
 /// The bulk list query no longer asks for `contexts` at all, only the rollup's own combined `state`: this is
 /// what GitHub sends back for that.
 @Test func bulkListOnlyCarriesTheRollupsCombinedState() async throws {
     func pr(state: String?) async throws -> PR {
-        let body = Data("""
-        {"data":{"rateLimit":{"remaining":9,"limit":10,"cost":1,"resetAt":null},
-          "repository":{"pullRequests":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[
-            {"number":1,"title":"t","isDraft":false,"state":"OPEN","createdAt":"2026-01-01T00:00:00Z",
-             "updatedAt":"2026-01-01T00:00:00Z","url":"https://x/1","headRefName":"h","baseRefName":"main",
-             "headRefOid":"abc","additions":1,"deletions":1,"mergeable":"MERGEABLE","reviewDecision":null,
-             "author":{"login":"a"},"repository":{"name":"r","owner":{"login":"o"}},"autoMergeRequest":null,
-             "viewerLatestReview":null,"comments":{"totalCount":0},"labels":{"nodes":[]},
-             "reviewRequests":{"totalCount":0},
-             "commits":{"nodes":[{"commit":{"statusCheckRollup":\(state.map { #"{"state":"\#($0)"}"# } ?? "null")}}]}}
-          ]}}}}
-        """.utf8)
+        let body = Data(
+            """
+            {"data":{"rateLimit":{"remaining":9,"limit":10,"cost":1,"resetAt":null},
+              "repository":{"pullRequests":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[
+                {"number":1,"title":"t","isDraft":false,"state":"OPEN","createdAt":"2026-01-01T00:00:00Z",
+                 "updatedAt":"2026-01-01T00:00:00Z","url":"https://x/1","headRefName":"h","baseRefName":"main",
+                 "headRefOid":"abc","additions":1,"deletions":1,"mergeable":"MERGEABLE","reviewDecision":null,
+                 "author":{"login":"a"},"repository":{"name":"r","owner":{"login":"o"}},"autoMergeRequest":null,
+                 "viewerLatestReview":null,"comments":{"totalCount":0},"labels":{"nodes":[]},
+                 "reviewRequests":{"totalCount":0},
+                 "commits":{"nodes":[{"commit":{"statusCheckRollup":\(state.map { #"{"state":"\#($0)"}"# } ?? "null")}}]}}
+              ]}}}}
+            """.utf8)
         let page = try await PullRequestQuery.fetchRepo(RepoId(owner: "o", name: "r"), client: GraphQLClient(gh: MockGh { _ in body }))
         return try #require(page.prs.first)
     }
@@ -76,7 +80,7 @@ private func fetchChecks(prNumber: Int, mutate: (inout [String: Any]) -> Void = 
 
     #expect(try await pr(state: "SUCCESS").checkSummary == .passing)
     #expect(try await pr(state: "PENDING").checkSummary == .pending)
-    #expect(try await pr(state: nil).checkSummary == .unknown)          // no commit status at all: no checks
+    #expect(try await pr(state: nil).checkSummary == .unknown)  // no commit status at all: no checks
 }
 
 @Test func fallsBackToTheFetchedChecksWhenTotalsAreMissing() async throws {
@@ -95,21 +99,24 @@ private func fetchChecks(prNumber: Int, mutate: (inout [String: Any]) -> Void = 
         ("CANCELLED", .cancelled),
         ("SKIPPED", .skipped), ("NEUTRAL", .skipped), ("STALE", .skipped), ("COMPLETED", .skipped),
         ("IN_PROGRESS", .pending), ("QUEUED", .pending), ("PENDING", .pending), ("WAITING", .pending),
-        ("SOMETHING_GITHUB_ADDS_LATER", .skipped),     // unknown states are gray, never green
+        ("SOMETHING_GITHUB_ADDS_LATER", .skipped),  // unknown states are gray, never green
     ]
     for (state, kind) in table { #expect(CheckCounts.kind(checkRunState: state) == kind, "\(state)") }
 }
 
 @Test func statusStatesMapToSegments() {
-    for (state, kind) in [("SUCCESS", CheckCounts.Kind.passed), ("FAILURE", .failed), ("ERROR", .failed),
-                          ("PENDING", .pending), ("EXPECTED", .pending), ("NEW_STATE", .skipped)] {
+    for (state, kind) in [
+        ("SUCCESS", CheckCounts.Kind.passed), ("FAILURE", .failed), ("ERROR", .failed),
+        ("PENDING", .pending), ("EXPECTED", .pending), ("NEW_STATE", .skipped),
+    ] {
         #expect(CheckCounts.kind(statusState: state) == kind, "\(state)")
     }
 }
 
 @Test func combinesCheckRunsAndStatusesAndIgnoresZeros() {
-    let c = CheckCounts(checkRuns: [.init(state: "SUCCESS", count: 5), .init(state: "FAILURE", count: 0), .init(state: "SKIPPED", count: 1)],
-                        statuses: [.init(state: "SUCCESS", count: 2), .init(state: "PENDING", count: 1)])
+    let c = CheckCounts(
+        checkRuns: [.init(state: "SUCCESS", count: 5), .init(state: "FAILURE", count: 0), .init(state: "SKIPPED", count: 1)],
+        statuses: [.init(state: "SUCCESS", count: 2), .init(state: "PENDING", count: 1)])
     #expect(c == CheckCounts(passed: 7, skipped: 1, pending: 1))
 }
 
@@ -154,24 +161,23 @@ private func fetchChecks(prNumber: Int, mutate: (inout [String: Any]) -> Void = 
     #expect(try JSONDecoder().decode(CheckCounts.self, from: JSONEncoder().encode(c)) == c)
 }
 
-
 // MARK: bar layout
 
 @Test func layoutIsProportionalAndFillsTheBar() {
-    let frames = CheckCounts(passed: 3, failed: 1).layout(width: 201, gap: 1)   // 200 usable: 150 + 50
+    let frames = CheckCounts(passed: 3, failed: 1).layout(width: 201, gap: 1)  // 200 usable: 150 + 50
     #expect(frames.map(\.kind) == [.passed, .failed])
     #expect(abs(frames[0].width - 150) < 1e-9 && abs(frames[1].width - 50) < 1e-9)
     #expect(frames[0].x == 0 && abs(frames[1].x - 151) < 1e-9)
     let last = frames[1]
-    #expect(abs(last.x + last.width - 201) < 1e-9)                              // ends exactly at the bar's edge
+    #expect(abs(last.x + last.width - 201) < 1e-9)  // ends exactly at the bar's edge
 }
 
 @Test func aSingleFailureAmongManyStaysVisible() {
     let frames = CheckCounts(passed: 33, failed: 1).layout(width: 100, gap: 1.5, minSegment: 3)
     let failed = frames.first { $0.kind == .failed }!
-    #expect(failed.width >= 3 - 1e-9)                       // proportionally it would be about 2.9pt
+    #expect(failed.width >= 3 - 1e-9)  // proportionally it would be about 2.9pt
     let last = frames.last!
-    #expect(abs(last.x + last.width - 100) < 1e-9)          // the room came out of the passed segment
+    #expect(abs(last.x + last.width - 100) < 1e-9)  // the room came out of the passed segment
     #expect(frames.allSatisfy { $0.width > 0 })
 }
 
@@ -179,7 +185,7 @@ private func fetchChecks(prNumber: Int, mutate: (inout [String: Any]) -> Void = 
     #expect(CheckCounts().layout(width: 100).isEmpty)
     #expect(CheckCounts(passed: 2).layout(width: 0).isEmpty)
     let one = CheckCounts(passed: 5).layout(width: 80)
-    #expect(one.count == 1 && one[0].x == 0 && abs(one[0].width - 80) < 1e-9)    // no gaps with one segment
+    #expect(one.count == 1 && one[0].x == 0 && abs(one[0].width - 80) < 1e-9)  // no gaps with one segment
     // too narrow for every segment to reach the minimum: equal shares, nothing overlaps or goes negative
     let tight = CheckCounts(passed: 20, failed: 1, skipped: 1, cancelled: 1, pending: 1).layout(width: 12, gap: 1, minSegment: 3)
     #expect(tight.count == 5 && tight.allSatisfy { $0.width > 0 })
@@ -215,6 +221,7 @@ private func fetchChecks(prNumber: Int, mutate: (inout [String: Any]) -> Void = 
 @Test func anUnrecognizedStateIsNeverPassing() {
     let counts = CheckCounts(checkRuns: [.init(state: "SUCCESS", count: 5), .init(state: "BRAND_NEW", count: 1)], statuses: [])
     #expect(counts.status == .unknown)
-    #expect(counts.skipped == 1)                    // still drawn gray
-    #expect(CheckCounts(checkRuns: [.init(state: "NEUTRAL", count: 1), .init(state: "SUCCESS", count: 5)], statuses: []).status == .passing)
+    #expect(counts.skipped == 1)  // still drawn gray
+    #expect(
+        CheckCounts(checkRuns: [.init(state: "NEUTRAL", count: 1), .init(state: "SUCCESS", count: 5)], statuses: []).status == .passing)
 }

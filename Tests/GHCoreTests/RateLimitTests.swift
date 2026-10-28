@@ -12,12 +12,12 @@ import Testing
 
 @Test func extraBucketsOnlyWhenUsed() throws {
     let json = """
-    {"resources":{"core":{"limit":5000,"used":1,"remaining":4999,"reset":1},
-      "search":{"limit":30,"used":0,"remaining":30,"reset":2},
-      "graphql":{"limit":5000,"used":0,"remaining":5000,"reset":3},
-      "code_search":{"limit":10,"used":4,"remaining":6,"reset":4},
-      "scim":{"limit":15000,"used":0,"remaining":15000,"reset":5}}}
-    """
+        {"resources":{"core":{"limit":5000,"used":1,"remaining":4999,"reset":1},
+          "search":{"limit":30,"used":0,"remaining":30,"reset":2},
+          "graphql":{"limit":5000,"used":0,"remaining":5000,"reset":3},
+          "code_search":{"limit":10,"used":4,"remaining":6,"reset":4},
+          "scim":{"limit":15000,"used":0,"remaining":15000,"reset":5}}}
+        """
     let buckets = try RateLimitAPI.parse(Data(json.utf8))
     #expect(buckets.map(\.name) == ["core", "graphql", "search", "code_search"])
     #expect(buckets[3].title == "Code search")
@@ -36,12 +36,14 @@ import Testing
     for i in 0..<150 { log.record("q\(i)", rl(1, 4000)) }
     #expect(log.entries.count == RequestLog.capacity)
     #expect(log.entries.first?.label == "q149")
-    #expect(log.count == 152 && log.totalCost == 154) // totals keep counting past the cap
+    #expect(log.count == 152 && log.totalCost == 154)  // totals keep counting past the cap
 }
 
 @Test func rateLimitHelpers() throws {
-    let rl = try GraphQLClient.decoder.decode(RateLimit.self, from: Data(
-        #"{"remaining":4000,"limit":5000,"cost":2,"resetAt":"2026-10-26T23:29:50Z","used":1000,"nodeCount":120}"#.utf8))
+    let rl = try GraphQLClient.decoder.decode(
+        RateLimit.self,
+        from: Data(
+            #"{"remaining":4000,"limit":5000,"cost":2,"resetAt":"2026-10-26T23:29:50Z","used":1000,"nodeCount":120}"#.utf8))
     #expect(rl.nodeCount == 120 && rl.used == 1000)
     #expect(abs(rl.fractionUsed - 0.2) < 0.0001)
     #expect(rl.resetDate == Date(timeIntervalSince1970: 1793057390))

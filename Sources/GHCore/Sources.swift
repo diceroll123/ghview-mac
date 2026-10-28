@@ -8,10 +8,15 @@ public enum Source: Hashable, Sendable, Codable, Identifiable {
 
     public var id: String { name.lowercased() }
     public var name: String {
-        switch self { case .user(let n), .org(let n), .repo(let n): n }
+        switch self {
+        case .user(let n), .org(let n), .repo(let n): n
+        }
     }
     public var displayName: String {
-        switch self { case .user(let n): "@\(n)"; case .org(let n), .repo(let n): n }
+        switch self {
+        case .user(let n): "@\(n)";
+        case .org(let n), .repo(let n): n
+        }
     }
 
     /// The account that owns this source (for a repository, the part before the slash).
@@ -33,7 +38,7 @@ public enum Source: Hashable, Sendable, Codable, Identifiable {
     }
 
     /// The profile or organization page on GitHub.
-    public var profileURL: URL { URL(string: "https://github.com/\(name)")! } // for a repository, its own page
+    public var profileURL: URL { URL(string: "https://github.com/\(name)")! }  // for a repository, its own page
 
     /// GitHub's own pull request search for everything open in this source, the browser twin of the PRs view.
     public var pullRequestsURL: URL {
@@ -44,7 +49,11 @@ public enum Source: Hashable, Sendable, Codable, Identifiable {
 
     /// Search qualifier for source-wide PR lists: every PR in the source's repos, not just ones it authored.
     public var searchScope: String {
-        switch self { case .user(let n): "user:\(n)"; case .org(let n): "org:\(n)"; case .repo(let n): "repo:\(n)" }
+        switch self {
+        case .user(let n): "user:\(n)";
+        case .org(let n): "org:\(n)";
+        case .repo(let n): "repo:\(n)"
+        }
     }
 }
 
@@ -65,11 +74,11 @@ public struct Viewer: Sendable, Equatable {
 
 public enum SourcesQuery {
     static let viewerQuery = """
-    query($after: String) {
-      rateLimit { remaining limit cost resetAt used nodeCount }
-      viewer { login organizations(first: 100, after: $after) { pageInfo { hasNextPage endCursor } nodes { login } } }
-    }
-    """
+        query($after: String) {
+          rateLimit { remaining limit cost resetAt used nodeCount }
+          viewer { login organizations(first: 100, after: $after) { pageInfo { hasNextPage endCursor } nodes { login } } }
+        }
+        """
 
     struct ViewerResponse: Decodable, Sendable {
         var rateLimit: RateLimit

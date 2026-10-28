@@ -28,15 +28,18 @@ public struct BatchSummary: Sendable, Equatable {
 public enum BatchRunner {
     /// Runs the action for every PR concurrently (merges into one base are serialized by `PrActions`).
     /// `progress` is called with the number of finished PRs after each one completes.
-    public static func run(_ action: PrAction, on prs: [PR], actions: PrActions, options: ActionOptions,
-                           progress: (@Sendable (Int) -> Void)? = nil,
-                           context: @Sendable (PR) -> ActionContext) async -> BatchSummary {
+    public static func run(
+        _ action: PrAction, on prs: [PR], actions: PrActions, options: ActionOptions,
+        progress: (@Sendable (Int) -> Void)? = nil,
+        context: @Sendable (PR) -> ActionContext
+    ) async -> BatchSummary {
         let pairs = prs.map { ($0, context($0)) }
         return await withTaskGroup(of: (PR, Result<ActionOutcome, Error>).self) { group in
             for (pr, ctx) in pairs {
                 group.addTask {
-                    do { return (pr, .success(try await actions.perform(action, pr: pr, options: options, ctx: ctx))) }
-                    catch { return (pr, .failure(error)) }
+                    do { return (pr, .success(try await actions.perform(action, pr: pr, options: options, ctx: ctx))) } catch {
+                        return (pr, .failure(error))
+                    }
                 }
             }
             var summary = BatchSummary()
@@ -46,8 +49,10 @@ public enum BatchRunner {
                 progress?(finished)
                 let label = "\(pr.repo.fullName)#\(pr.number)"
                 switch result {
-                case .success(.done(let message)): summary.done.append(label); summary.doneMessages.append(message); summary.doneIDs.append(pr.id)
-                case .success(.queued(let message)): summary.queued.append(label); summary.queuedMessages.append(message); summary.queuedIDs.append(pr.id)
+                case .success(.done(let message)):
+                    summary.done.append(label); summary.doneMessages.append(message); summary.doneIDs.append(pr.id)
+                case .success(.queued(let message)):
+                    summary.queued.append(label); summary.queuedMessages.append(message); summary.queuedIDs.append(pr.id)
                 case .success(.skipped(let why)): summary.skipped.append("\(label): \(why)"); summary.skippedIDs.append(pr.id)
                 case .failure(let err):
                     // A cancelled command may already have reached GitHub, so its state is unknown, not unchanged.
@@ -70,8 +75,11 @@ public enum BatchRunner {
             var summary = BatchSummary()
             for await (pr, err) in group {
                 let label = "\(pr.repo.fullName)#\(pr.number)"
-                if let err { summary.failed.append("\(label): \(err.localizedDescription)"); summary.failedIDs.append(pr.id) }
-                else { summary.done.append(label); summary.doneIDs.append(pr.id) }
+                if let err {
+                    summary.failed.append("\(label): \(err.localizedDescription)"); summary.failedIDs.append(pr.id)
+                } else {
+                    summary.done.append(label); summary.doneIDs.append(pr.id)
+                }
             }
             return summary
         }

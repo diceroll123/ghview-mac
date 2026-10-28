@@ -18,8 +18,9 @@ private func modelWithPRs(_ gh: GatedGh) async -> AppModel {
     for _ in 0..<500 where model.prsLoading { try? await Task.sleep(for: .milliseconds(2)) }
     gh.setGateEnabled(true)
     model.repos = Set(model.prs.map(\.repo)).map {
-        RepoInfo(id: $0, language: nil, pushedAt: nil, stars: 0, openPRs: 0, isArchived: false, isPrivate: false,
-                 canPush: true, allowAutoMerge: true, hasIssues: true)
+        RepoInfo(
+            id: $0, language: nil, pushedAt: nil, stars: 0, openPRs: 0, isArchived: false, isPrivate: false,
+            canPush: true, allowAutoMerge: true, hasIssues: true)
     }
     return model
 }
@@ -35,7 +36,7 @@ private func tag(_ pr: PR, _ sub: String = "close") -> String { "pr:\(sub):\(pr.
 
     model.perform(.close, on: [pr])
     await gh.waitForRequest(tag(pr))
-    #expect(model.unavailableReason(.close, for: [pr]) != nil)   // the button is disabled while it runs
+    #expect(model.unavailableReason(.close, for: [pr]) != nil)  // the button is disabled while it runs
     model.perform(.close, on: [pr])
     model.perform(.close, on: [pr])
     await settle()
@@ -73,13 +74,13 @@ private func tag(_ pr: PR, _ sub: String = "close") -> String { "pr:\(sub):\(pr.
     model.perform(.close, on: [a, b], confirmed: true)
     await gh.waitForRequest(tag(a)); await gh.waitForRequest(tag(b))
     #expect(model.isBusy([a]) && model.isBusy([b]))
-    model.selection.clear()                         // the user moved on and picked something else
+    model.selection.clear()  // the user moved on and picked something else
     model.selection.toggle(c.id)
 
     await gh.release(tag(a)); await gh.release(tag(b), fail: true)
     await settle()
     #expect(model.busy.isEmpty)
-    #expect(model.selection.selected == [c.id])     // untouched by the finished batch
+    #expect(model.selection.selected == [c.id])  // untouched by the finished batch
 }
 
 @Test @MainActor func failedTargetsRemainSelectedForARetry() async {
@@ -104,9 +105,9 @@ private func tag(_ pr: PR, _ sub: String = "close") -> String { "pr:\(sub):\(pr.
     let pending = try? #require(model.pendingConfirmation)
     #expect(pending?.targets.map(\.id) == [a.id, b.id])
     #expect(pending?.message.contains("diceroll123/ghview#\(a.number)") == true)
-    #expect(await gh.requests().filter { $0.hasPrefix("pr:") }.isEmpty)   // nothing runs before the user agrees
+    #expect(await gh.requests().filter { $0.hasPrefix("pr:") }.isEmpty)  // nothing runs before the user agrees
 
-    model.perform(.merge, on: [a])                   // a single PR needs no confirmation
+    model.perform(.merge, on: [a])  // a single PR needs no confirmation
     await gh.waitForRequest(tag(a, "merge"))
 }
 
@@ -128,22 +129,23 @@ private func tag(_ pr: PR, _ sub: String = "close") -> String { "pr:\(sub):\(pr.
 @MainActor
 private func withRepo(_ model: AppModel, canPush: Bool, autoMerge: Bool = true) {
     model.repos = Set(model.prs.map(\.repo)).map {
-        RepoInfo(id: $0, language: nil, pushedAt: nil, stars: 0, openPRs: 0, isArchived: false, isPrivate: false,
-                 canPush: canPush, allowAutoMerge: autoMerge, hasIssues: true)
+        RepoInfo(
+            id: $0, language: nil, pushedAt: nil, stars: 0, openPRs: 0, isArchived: false, isPrivate: false,
+            canPush: canPush, allowAutoMerge: autoMerge, hasIssues: true)
     }
 }
 
 @Test @MainActor func mergeControlsAreOfferedOnlyWhenTheSelectionCanBeMerged() async {
     let model = await modelWithPRs(GatedGh { $0.hasPrefix("pr:") })
     let pr = model.prs[0]
-    #expect(model.offers(.merge, for: [pr]) && model.offers(.autoMerge, for: [pr]))     // push access, open, not a draft
+    #expect(model.offers(.merge, for: [pr]) && model.offers(.autoMerge, for: [pr]))  // push access, open, not a draft
 
     withRepo(model, canPush: false)
-    #expect(!model.offers(.merge, for: [pr]) && !model.offers(.autoMerge, for: [pr]))   // no push access: nothing to show
+    #expect(!model.offers(.merge, for: [pr]) && !model.offers(.autoMerge, for: [pr]))  // no push access: nothing to show
     #expect(!model.offers(.disableAutoMerge, for: [pr]))
 
     withRepo(model, canPush: true, autoMerge: false)
-    #expect(model.offers(.merge, for: [pr]) && !model.offers(.autoMerge, for: [pr]))    // the repo has auto-merge off
+    #expect(model.offers(.merge, for: [pr]) && !model.offers(.autoMerge, for: [pr]))  // the repo has auto-merge off
 
     var draft = pr; draft.isDraft = true
     #expect(!model.offers(.merge, for: [draft]) && !model.offers(.autoMerge, for: [draft]))
@@ -164,12 +166,12 @@ private func withRepo(_ model: AppModel, canPush: Bool, autoMerge: Bool = true) 
     let model = await modelWithPRs(gh)
     let pr = model.prs[0]
 
-    model.repos = []                                               // permissions not loaded yet: not a "no"
+    model.repos = []  // permissions not loaded yet: not a "no"
     #expect(model.unavailableReason(.merge, for: [pr]) != nil)
     #expect(model.offers(.merge, for: [pr]))
 
     withRepo(model, canPush: true)
-    model.perform(.close, on: [pr], confirmed: true)               // busy: another action is running on it
+    model.perform(.close, on: [pr], confirmed: true)  // busy: another action is running on it
     await gh.waitForRequest("pr:close:\(pr.number)")
     #expect(model.offers(.merge, for: [pr]))
     await gh.release("pr:close:\(pr.number)")

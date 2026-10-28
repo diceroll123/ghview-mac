@@ -9,7 +9,7 @@ let package = Package(
         .library(name: "GHCore", targets: ["GHCore"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/raspu/Highlightr.git", from: "2.3.0"),
+        .package(url: "https://github.com/raspu/Highlightr.git", from: "2.3.0")
     ],
     targets: [
         .target(name: "GHCore"),

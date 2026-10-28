@@ -8,14 +8,14 @@ private func defaults() -> UserDefaults { UserDefaults(suiteName: "settings-\(UU
 @Test @MainActor func settingsStartOffAndPersist() {
     let d = defaults()
     let s = AppSettings(defaults: d)
-    #expect(!s.showRepoTree && !s.hideArchivedRepos && s.contextMenuScope == .clickedOnly)   // all off by default
+    #expect(!s.showRepoTree && !s.hideArchivedRepos && s.contextMenuScope == .clickedOnly)  // all off by default
 
     s.showRepoTree = true
     s.hideArchivedRepos = true
     s.contextMenuScope = .allSelected
     let again = AppSettings(defaults: d)
     #expect(again.showRepoTree && again.hideArchivedRepos && again.contextMenuScope == .allSelected)
-    #expect(AppSettings(defaults: defaults()).contextMenuScope == .clickedOnly)               // another store is unaffected
+    #expect(AppSettings(defaults: defaults()).contextMenuScope == .clickedOnly)  // another store is unaffected
 }
 
 @Test @MainActor func aCorruptContextMenuSettingFallsBackToTheSafeDefault() {
@@ -30,7 +30,7 @@ private func defaults() -> UserDefaults { UserDefaults(suiteName: "settings-\(UU
     #expect(s.repoSubtitleEntries.enabled() == [.language, .lockIcon])
 
     let first = s.repoSubtitleEntries.removeFirst()
-    s.repoSubtitleEntries.append(first)                                   // reorder, as dragging a row would
+    s.repoSubtitleEntries.append(first)  // reorder, as dragging a row would
     s.repoSubtitleEntries[s.repoSubtitleEntries.firstIndex { $0.item == .releaseTag }!].enabled = true
     let order: [RepoSubtitleItem] = s.repoSubtitleEntries.map(\.item)
 
@@ -62,7 +62,6 @@ private func defaults() -> UserDefaults { UserDefaults(suiteName: "settings-\(UU
     #expect(again.sourceBadgeEntries.first { $0.item == .reviewRequested }?.color == .accent)
 }
 
-
 @MainActor
 private func modelWithPRs() async -> AppModel {
     let gh = GatedGh(gate: { _ in false })
@@ -79,9 +78,9 @@ private func modelWithPRs() async -> AppModel {
     let (a, b, c) = (m.prs[0], m.prs[1], m.prs[2])
     m.selection.toggle(a.id); m.selection.toggle(b.id)
 
-    #expect(m.contextTargets(for: a).map(\.id) == [a.id])          // one of two selected: still just this one
+    #expect(m.contextTargets(for: a).map(\.id) == [a.id])  // one of two selected: still just this one
     #expect(m.contextTargets(for: c).map(\.id) == [c.id])
-    #expect(m.actionTargets.map(\.id) == [a.id, b.id])             // the action bar still acts on the selection
+    #expect(m.actionTargets.map(\.id) == [a.id, b.id])  // the action bar still acts on the selection
 }
 
 @Test @MainActor func theSettingMakesARightClickOnASelectedPRActOnAllSelected() async {
@@ -91,7 +90,7 @@ private func modelWithPRs() async -> AppModel {
     m.settings.contextMenuScope = .allSelected
 
     #expect(m.contextTargets(for: a).map(\.id) == [a.id, b.id])
-    #expect(m.contextTargets(for: c).map(\.id) == [c.id])          // an unselected PR is only itself either way
+    #expect(m.contextTargets(for: c).map(\.id) == [c.id])  // an unselected PR is only itself either way
 }
 
 @Test @MainActor func theRepoTreeIsOffUnlessAskedFor() async {
@@ -101,7 +100,7 @@ private func modelWithPRs() async -> AppModel {
     m.catalog = SourceCatalog.seeded(from: [.org("a")])
     m.toggleExpanded(.org("a"))
     try? await Task.sleep(for: .milliseconds(30))
-    #expect(!m.isExpanded(.org("a")) && m.repos.isEmpty)           // nothing expands, nothing is fetched
+    #expect(!m.isExpanded(.org("a")) && m.repos.isEmpty)  // nothing expands, nothing is fetched
     #expect(await gh.requests().isEmpty)
 
     m.settings.showRepoTree = true
@@ -116,7 +115,9 @@ private func archivedOverride() -> @Sendable ([String]) -> Data? {
         func node(_ n: String, archived: Bool, priv: Bool) -> String {
             #"{"name":"\#(n)","owner":{"login":"a"},"primaryLanguage":null,"pushedAt":"2026-10-26T20:34:12Z","stargazerCount":0,"isArchived":\#(archived),"isPrivate":\#(priv),"viewerPermission":"ADMIN","autoMergeAllowed":true,"hasIssuesEnabled":true,"pullRequests":{"totalCount":1}}"#
         }
-        return Data(#"{"data":{"rateLimit":{"remaining":1,"limit":2,"cost":1,"resetAt":null},"repositoryOwner":{"repositories":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[\#(node("live", archived: false, priv: false)),\#(node("old", archived: true, priv: false)),\#(node("secret", archived: false, priv: true))]}}}}"#.utf8)
+        return Data(
+            #"{"data":{"rateLimit":{"remaining":1,"limit":2,"cost":1,"resetAt":null},"repositoryOwner":{"repositories":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[\#(node("live", archived: false, priv: false)),\#(node("old", archived: true, priv: false)),\#(node("secret", archived: false, priv: true))]}}}}"#
+                .utf8)
     }
 }
 
@@ -126,13 +127,13 @@ private func archivedOverride() -> @Sendable ([String]) -> Data? {
     m.catalog = SourceCatalog.seeded(from: [.org("a")])
     await m.loadRepos(for: [.org("a")])
 
-    #expect(m.repos(in: .org("a")).map(\.id.name) == ["live", "old", "secret"])      // archived is shown by default
+    #expect(m.repos(in: .org("a")).map(\.id.name) == ["live", "old", "secret"])  // archived is shown by default
     #expect(m.repos(in: .org("a")).first { $0.id.name == "old" }?.isArchived == true)
     #expect(m.repos(in: .org("a")).first { $0.id.name == "secret" }?.isPrivate == true)
 
     m.settings.hideArchivedRepos = true
     #expect(m.repos(in: .org("a")).map(\.id.name) == ["live", "secret"])
-    #expect(m.repoInfo(for: RepoId(owner: "a", name: "old"))?.isArchived == true)    // permissions still know it is archived
+    #expect(m.repoInfo(for: RepoId(owner: "a", name: "old"))?.isArchived == true)  // permissions still know it is archived
 }
 
 @Test @MainActor func actionsOnAnArchivedReposPRsExplainWhy() async {
@@ -141,10 +142,11 @@ private func archivedOverride() -> @Sendable ([String]) -> Data? {
     m.viewer = Viewer(login: "me", orgs: [])
     m.catalog = SourceCatalog.seeded(from: [.org("a")])
     await m.loadRepos(for: [.org("a")])
-    var pr = PR(id: PrId(repo: RepoId(owner: "a", name: "old"), number: 1), title: "t", author: "me", isDraft: false, isOpen: true,
-                createdAt: Date(), updatedAt: Date(), url: "u", headRef: "h", baseRef: "main", headSha: "s", additions: 0, deletions: 0,
-                comments: 0, autoMerge: false, reviewStatus: .unknown, viewerApproved: false, mergeable: .clean,
-                requestedReviewers: [], labels: [], checks: [], checkSummary: .unknown)
+    var pr = PR(
+        id: PrId(repo: RepoId(owner: "a", name: "old"), number: 1), title: "t", author: "me", isDraft: false, isOpen: true,
+        createdAt: Date(), updatedAt: Date(), url: "u", headRef: "h", baseRef: "main", headSha: "s", additions: 0, deletions: 0,
+        comments: 0, autoMerge: false, reviewStatus: .unknown, viewerApproved: false, mergeable: .clean,
+        requestedReviewers: [], labels: [], checks: [], checkSummary: .unknown)
     pr.isOpen = true
     #expect(m.unavailableReason(.merge, for: [pr])?.contains("archived") == true)
 }
@@ -160,10 +162,10 @@ private func archivedOverride() -> @Sendable ([String]) -> Data? {
     m.destination = .sources(["me"])
     m.addRepoSource(repo)
     #expect(m.isSource(repo))
-    #expect(m.destination == .sources(["me"]))                      // adding from a menu does not navigate away
+    #expect(m.destination == .sources(["me"]))  // adding from a menu does not navigate away
     #expect(m.catalog.groups.last?.name == "Repositories")
 
-    m.addRepoSource(repo)                                           // adding it again is a harmless no-op
+    m.addRepoSource(repo)  // adding it again is a harmless no-op
     #expect(m.catalog.allSources.filter { $0 == .repo("acme/api") }.count == 1)
 }
 
@@ -173,10 +175,10 @@ private func archivedOverride() -> @Sendable ([String]) -> Data? {
     m.settings.showRepoTree = true
     m.connect(gh)
     m.catalog = SourceCatalog.seeded(from: [.repo("acme/api"), .org("acme")])
-    m.toggleExpanded(.repo("acme/api"))                              // not expandable: it is one repository
+    m.toggleExpanded(.repo("acme/api"))  // not expandable: it is one repository
     await m.loadRepos(for: m.catalog.allSources)
     let requests = await gh.requests()
-    #expect(!m.isExpanded(.repo("acme/api")) && requests == ["repos:acme"])   // only the org was enumerated
+    #expect(!m.isExpanded(.repo("acme/api")) && requests == ["repos:acme"])  // only the org was enumerated
 
     m.destination = .sources(["acme/api"])
     m.loadPRs()

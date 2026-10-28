@@ -15,9 +15,12 @@ func fixture(_ name: String) throws -> Data {
 @Test func decodesRepoPRFixture() async throws {
     let data = try fixture("repo_prs")
     let seen = LockedBox<[String]>([])
-    let gh = MockGh { args in seen.set(args); return data }
-    let page = try await PullRequestQuery.fetchRepo(RepoId(owner: "diceroll123", name: "ghview"),
-                                                    client: GraphQLClient(gh: gh))
+    let gh = MockGh { args in
+        seen.set(args); return data
+    }
+    let page = try await PullRequestQuery.fetchRepo(
+        RepoId(owner: "diceroll123", name: "ghview"),
+        client: GraphQLClient(gh: gh))
     #expect(!page.prs.isEmpty)
     #expect(page.rateLimit.cost == 1)
     let first = try #require(page.prs.first)
@@ -71,10 +74,12 @@ final class LockedBox<T>: @unchecked Sendable {
     var prs = repo["pullRequests"] as! [String: Any]
     var nodes = prs["nodes"] as! [[String: Any]]
     nodes[0]["reviewRequests"] = ["totalCount": 30]
-    nodes[0]["reviewRequestNodes"] = ["nodes": [
-        ["requestedReviewer": ["login": "alice"]],
-        ["requestedReviewer": ["slug": "alice", "organization": ["login": "acme"]]],
-    ]]
+    nodes[0]["reviewRequestNodes"] = [
+        "nodes": [
+            ["requestedReviewer": ["login": "alice"]],
+            ["requestedReviewer": ["slug": "alice", "organization": ["login": "acme"]]],
+        ]
+    ]
     nodes[0]["labels"] = ["totalCount": 25, "nodes": [["name": "bug", "color": "ff0000"]]]
     prs["nodes"] = nodes; repo["pullRequests"] = prs; data["repository"] = repo; json["data"] = data
     let body = try JSONSerialization.data(withJSONObject: json)

@@ -11,8 +11,10 @@ public struct CheckCounts: Hashable, Sendable, Codable {
     /// States we do not recognise. They are drawn as `skipped`, but they stop the PR from reading as passing.
     public var unrecognized = 0
 
-    public init(passed: Int = 0, failed: Int = 0, skipped: Int = 0, cancelled: Int = 0, pending: Int = 0,
-                unrecognized: Int = 0) {
+    public init(
+        passed: Int = 0, failed: Int = 0, skipped: Int = 0, cancelled: Int = 0, pending: Int = 0,
+        unrecognized: Int = 0
+    ) {
         self.unrecognized = unrecognized
         self.passed = passed
         self.failed = failed
@@ -144,7 +146,7 @@ public struct CheckCounts: Hashable, Sendable, Codable {
         case "FAILURE", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED": .failed
         case "CANCELLED": .cancelled
         case "IN_PROGRESS", "QUEUED", "PENDING", "WAITING", "REQUESTED": .pending
-        default: .skipped // SKIPPED, NEUTRAL, STALE, COMPLETED and anything new
+        default: .skipped  // SKIPPED, NEUTRAL, STALE, COMPLETED and anything new
         }
     }
 

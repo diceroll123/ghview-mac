@@ -22,11 +22,13 @@ private final class Net: @unchecked Sendable {
     private(set) var tokens: [String?] = []
     var networkCalls: Int { lock.withLock { policies.filter { $0 == .reloadRevalidatingCacheData }.count } }
     private func record(_ policy: URLRequest.CachePolicy, _ token: String?) -> (Bool, UInt8) {
-        lock.withLock { policies.append(policy); tokens.append(token); return (fail, shade) }
+        lock.withLock {
+            policies.append(policy); tokens.append(token); return (fail, shade)
+        }
     }
     func fetch(_ url: URL, _ policy: URLRequest.CachePolicy, _ token: String?) async throws -> (Data, Int) {
         let (failing, s) = record(policy, token)
-        if policy == .returnCacheDataDontLoad { throw URLError(.resourceUnavailable) }   // nothing on disk
+        if policy == .returnCacheDataDontLoad { throw URLError(.resourceUnavailable) }  // nothing on disk
         if failing { throw URLError(.notConnectedToInternet) }
         return (png(s), 200)
     }
@@ -37,12 +39,13 @@ private let url = URL(string: "https://avatars.example/u/1")!
 @MainActor
 private func store(_ net: Net, _ clock: Clock, limit: Int = 500) -> AvatarStore {
     // Each decoded image remembers which bytes it came from, so tests can tell one avatar from another.
-    AvatarStore(fetch: { try await net.fetch($0, $1, $2) }, now: { clock.date },
-                decode: { data in
-                    let image = NSImage(size: NSSize(width: 1, height: 1))
-                    image.accessibilityDescription = String(data.hashValue)
-                    return image
-                }, limit: limit)
+    AvatarStore(
+        fetch: { try await net.fetch($0, $1, $2) }, now: { clock.date },
+        decode: { data in
+            let image = NSImage(size: NSSize(width: 1, height: 1))
+            image.accessibilityDescription = String(data.hashValue)
+            return image
+        }, limit: limit)
 }
 
 @Test @MainActor func aFailedAvatarRecoversAfterTheRetryInterval() async {
@@ -53,7 +56,7 @@ private func store(_ net: Net, _ clock: Clock, limit: Int = 500) -> AvatarStore 
     #expect(s.image(for: url) == nil && net.networkCalls == 1)
 
     net.fail = false
-    await s.load(url)                                  // too soon: no new request
+    await s.load(url)  // too soon: no new request
     #expect(net.networkCalls == 1 && s.image(for: url) == nil)
 
     clock.advance(AvatarStore.firstRetry + 1)
@@ -66,12 +69,12 @@ private func store(_ net: Net, _ clock: Clock, limit: Int = 500) -> AvatarStore 
     let net = Net(), clock = Clock()
     let s = store(net, clock)
     net.fail = true
-    await s.load(url)                                  // first failure: retry after 30 s
+    await s.load(url)  // first failure: retry after 30 s
     clock.advance(31)
-    await s.load(url)                                  // second failure: retry after 60 s
+    await s.load(url)  // second failure: retry after 60 s
     clock.advance(31)
     await s.load(url)
-    #expect(net.networkCalls == 2)                     // 31 s is not enough any more
+    #expect(net.networkCalls == 2)  // 31 s is not enough any more
     clock.advance(30)
     await s.load(url)
     #expect(net.networkCalls == 3)
@@ -85,9 +88,9 @@ private func store(_ net: Net, _ clock: Clock, limit: Int = 500) -> AvatarStore 
     #expect(first != nil && net.networkCalls == 1)
 
     clock.advance(3600)
-    net.shade = 200                                    // the user changed their picture
+    net.shade = 200  // the user changed their picture
     await s.load(url)
-    #expect(net.networkCalls == 1)                     // still fresh: no request
+    #expect(net.networkCalls == 1)  // still fresh: no request
 
     clock.advance(24 * 3600)
     await s.load(url)
@@ -98,11 +101,12 @@ private func store(_ net: Net, _ clock: Clock, limit: Int = 500) -> AvatarStore 
 @Test @MainActor func aCachedCopyIsShownAndThenRevalidated() async {
     let cached = png(50)
     let calls = LockedPolicies()
-    let s = AvatarStore(fetch: { _, policy, _ in
-        calls.add(policy)
-        if policy == .returnCacheDataDontLoad { return (cached, 200) }
-        return (png(90), 200)
-    }, decode: { _ in NSImage(size: NSSize(width: 1, height: 1)) })
+    let s = AvatarStore(
+        fetch: { _, policy, _ in
+            calls.add(policy)
+            if policy == .returnCacheDataDontLoad { return (cached, 200) }
+            return (png(90), 200)
+        }, decode: { _ in NSImage(size: NSSize(width: 1, height: 1)) })
     await s.load(url)
     #expect(calls.policies == [.returnCacheDataDontLoad, .reloadRevalidatingCacheData])
     #expect(s.image(for: url) != nil)
@@ -120,11 +124,11 @@ private final class LockedPolicies: @unchecked Sendable {
     let s = store(net, clock, limit: 3)
     let urls = (1...5).map { URL(string: "https://avatars.example/u/\($0)")! }
     for u in urls[0...2] { await s.load(u) }
-    _ = s.image(for: urls[0])                          // used again: now the most recent
+    _ = s.image(for: urls[0])  // used again: now the most recent
     await s.load(urls[3])
     await s.load(urls[4])
     #expect(s.cachedCount == 3)
-    #expect(s.image(for: urls[0]) != nil)              // survived because it was in use
+    #expect(s.image(for: urls[0]) != nil)  // survived because it was in use
     #expect(s.image(for: urls[4]) != nil && s.image(for: urls[3]) != nil)
     #expect(s.image(for: urls[1]) == nil)
 }
@@ -147,5 +151,5 @@ private struct TokenGh: GhRunner {
     let s = store(net, clock)
     s.configureAuth(gh: TokenGh())
     await s.load(url)
-    #expect(net.tokens == ["sso-token-123", "sso-token-123"])   // so an avatar behind SAML SSO loads like any other gh call
+    #expect(net.tokens == ["sso-token-123", "sso-token-123"])  // so an avatar behind SAML SSO loads like any other gh call
 }

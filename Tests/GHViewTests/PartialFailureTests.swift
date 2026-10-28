@@ -7,13 +7,15 @@ private let rate = #"{"remaining":4000,"limit":5000,"cost":1,"resetAt":"2026-10-
 
 /// Search answers for every org except `broken`, which fails until `fixed` is set.
 private func searchGh(broken: String, fixed: Box<Bool>) -> GatedGh {
-    GatedGh(gate: { _ in false }, override: { args in
-        guard let q = args.first(where: { $0.hasPrefix("q=") }) else { return nil }
-        if q.contains("org:\(broken)"), !fixed.get() {
-            throw GhError(args: args, status: 1, stderr: "Resource protected by organization SAML enforcement")
-        }
-        return nil
-    })
+    GatedGh(
+        gate: { _ in false },
+        override: { args in
+            guard let q = args.first(where: { $0.hasPrefix("q=") }) else { return nil }
+            if q.contains("org:\(broken)"), !fixed.get() {
+                throw GhError(args: args, status: 1, stderr: "Resource protected by organization SAML enforcement")
+            }
+            return nil
+        })
 }
 
 @Test @MainActor func healthySourcesStayUsableWhileOneFailsAndRetryFillsItIn() async {
@@ -27,7 +29,7 @@ private func searchGh(broken: String, fixed: Box<Bool>) -> GatedGh {
     for _ in 0..<500 where m.prs.isEmpty { try? await Task.sleep(for: .milliseconds(2)) }
     for _ in 0..<500 where m.prsLoading { try? await Task.sleep(for: .milliseconds(2)) }
 
-    #expect(!m.prs.isEmpty)                                         // a's PRs are there
+    #expect(!m.prs.isEmpty)  // a's PRs are there
     #expect(m.prFailures.map(\.scope) == ["org:b"])
     #expect(m.error == nil && !m.loadFailed)
     let before = m.prs.count
@@ -40,11 +42,15 @@ private func searchGh(broken: String, fixed: Box<Bool>) -> GatedGh {
 }
 
 @Test @MainActor func oneSourceWhoseReposCannotBeListedDoesNotHideTheOthers() async {
-    let gh = GatedGh(gate: { _ in false }, override: { args in
-        guard let login = args.first(where: { $0.hasPrefix("login=") }) else { return nil }
-        if login == "login=b" { throw GhError(args: args, status: 1, stderr: "Could not resolve to an Organization with the login of 'b'") }
-        return nil
-    })
+    let gh = GatedGh(
+        gate: { _ in false },
+        override: { args in
+            guard let login = args.first(where: { $0.hasPrefix("login=") }) else { return nil }
+            if login == "login=b" {
+                throw GhError(args: args, status: 1, stderr: "Could not resolve to an Organization with the login of 'b'")
+            }
+            return nil
+        })
     let m = AppModel()
     m.connect(gh)
     m.catalog = SourceCatalog.seeded(from: [.org("a"), .org("b")])
@@ -63,15 +69,17 @@ private func searchGh(broken: String, fixed: Box<Bool>) -> GatedGh {
 }
 
 @Test @MainActor func whenEverySourceFailsEachOneIsReportedOnItsOwnRow() async {
-    let gh = GatedGh(gate: { _ in false }, override: { args in
-        if args.contains(where: { $0.hasPrefix("login=") }) { throw GhError(args: args, status: 1, stderr: "boom") }
-        return nil
-    })
+    let gh = GatedGh(
+        gate: { _ in false },
+        override: { args in
+            if args.contains(where: { $0.hasPrefix("login=") }) { throw GhError(args: args, status: 1, stderr: "boom") }
+            return nil
+        })
     let m = AppModel()
     m.connect(gh)
     m.catalog = SourceCatalog.seeded(from: [.org("a"), .org("b")])
     await m.loadRepos(for: m.catalog.allSources)
     #expect(m.repos.isEmpty)
-    #expect(m.repoFailures == ["a": "boom", "b": "boom"])      // shown under each source, not as an alert
+    #expect(m.repoFailures == ["a": "boom", "b": "boom"])  // shown under each source, not as an alert
     #expect(m.error == nil)
 }

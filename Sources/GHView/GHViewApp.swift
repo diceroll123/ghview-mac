@@ -3,17 +3,18 @@ import GHCore
 
 @main
 struct GHViewApp: App {
-#if DEBUG
-    // Demo mode (debug builds only, see scripts/generate-screenshot.sh) gets its own throwaway defaults and
-    // cache file, so running it never touches - or is affected by - a real install's settings.
-    private static let isDemo = ProcessInfo.processInfo.environment["GHVIEW_DEMO_FIXTURES"] == "1"
-    @State private var model = AppModel(
-        defaults: isDemo ? UserDefaults(suiteName: "ghview-demo-\(UUID().uuidString)")! : .standard,
-        countsURL: isDemo ? FileManager.default.temporaryDirectory.appendingPathComponent("ghview-demo-\(UUID().uuidString).json")
-                          : SourceCountsCache.defaultURL)
-#else
-    @State private var model = AppModel()
-#endif
+    #if DEBUG
+        // Demo mode (debug builds only, see scripts/generate-screenshot.sh) gets its own throwaway defaults and
+        // cache file, so running it never touches - or is affected by - a real install's settings.
+        private static let isDemo = ProcessInfo.processInfo.environment["GHVIEW_DEMO_FIXTURES"] == "1"
+        @State private var model = AppModel(
+            defaults: isDemo ? UserDefaults(suiteName: "ghview-demo-\(UUID().uuidString)")! : .standard,
+            countsURL: isDemo
+                ? FileManager.default.temporaryDirectory.appendingPathComponent("ghview-demo-\(UUID().uuidString).json")
+                : SourceCountsCache.defaultURL)
+    #else
+        @State private var model = AppModel()
+    #endif
 
     var body: some Scene {
         // One window, deliberately: navigation (sources, repo, selection, filters) lives in one shared model, so a
@@ -25,7 +26,7 @@ struct GHViewApp: App {
                 .frame(minWidth: 1000, minHeight: 600)
                 .task {
                     #if DEBUG
-                    if Self.isDemo { model.startDemo(); return }
+                        if Self.isDemo { model.startDemo(); return }
                     #endif
                     await model.start()
                 }
@@ -67,8 +68,7 @@ struct SelectionCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .textEditing) {
             Button("Select All") {
-                if let prList { prList.selectAll() }
-                else { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) }
+                if let prList { prList.selectAll() } else { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) }
             }
             .keyboardShortcut("a")
             Button("Clear PR Selection") { model.selection.clear() }
@@ -85,7 +85,9 @@ struct SidebarCommands: Commands {
     var body: some Commands {
         CommandGroup(after: .sidebar) {
             Toggle("Show Inbox", isOn: Binding(get: { !model.layout.inboxHidden }, set: { model.setInboxHidden(!$0) }))
-            Toggle("Show Search Shortcuts", isOn: Binding(get: { !model.layout.quickSearchesHidden }, set: { model.setQuickSearchesHidden(!$0) }))
+            Toggle(
+                "Show Search Shortcuts",
+                isOn: Binding(get: { !model.layout.quickSearchesHidden }, set: { model.setQuickSearchesHidden(!$0) }))
             Toggle("Show Views", isOn: Binding(get: { !model.layout.savedViewsHidden }, set: { model.setSavedViewsHidden(!$0) }))
             Button("Show Hidden Inbox Entries") { model.showHiddenEntries() }
                 .disabled(model.layout.hiddenEntryCount == 0)

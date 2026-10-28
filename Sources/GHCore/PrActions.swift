@@ -114,7 +114,7 @@ public enum Permissions {
             switch pr.mergeable {
             case .clean: return "Already up to date"
             case .dirty: return "Has conflicts, cannot rebase"
-            default: return nil // GitHub rejects a conflicting rebase atomically
+            default: return nil  // GitHub rejects a conflicting rebase atomically
             }
         }
     }
@@ -141,8 +141,10 @@ public struct PrActions: Sendable {
     public let serializer: KeyedSerializer
     public var sleep: @Sendable (Duration) async -> Void
 
-    public init(gh: any GhRunner, serializer: KeyedSerializer = KeyedSerializer(),
-                sleep: @escaping @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }) {
+    public init(
+        gh: any GhRunner, serializer: KeyedSerializer = KeyedSerializer(),
+        sleep: @escaping @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }
+    ) {
         self.gh = gh
         self.serializer = serializer
         self.sleep = sleep
@@ -160,8 +162,10 @@ public struct PrActions: Sendable {
             let current = String(decoding: try await gh.run(["api", "repos/\(repo)/pulls/\(n)", "--jq", ".head.sha"]), as: UTF8.self)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if current != pr.headSha { return .skipped(Self.headMoved(n)) }
-            _ = try await gh.run(["api", "-X", "POST", "repos/\(repo)/pulls/\(n)/reviews",
-                                  "-f", "event=APPROVE", "-f", "commit_id=\(pr.headSha)"])
+            _ = try await gh.run([
+                "api", "-X", "POST", "repos/\(repo)/pulls/\(n)/reviews",
+                "-f", "event=APPROVE", "-f", "commit_id=\(pr.headSha)",
+            ])
             return .done("Approved #\(n)")
         case .close:
             _ = try await gh.run(["pr", "close", n, "-R", repo])
@@ -203,7 +207,9 @@ public struct PrActions: Sendable {
 
     /// Reads the PR back after a merge command. Nil if that fails; the command itself already succeeded.
     func mergeState(_ n: String, _ repo: String) async -> MergeState? {
-        guard let data = try? await gh.run(["pr", "view", n, "-R", repo, "--json", "state,isInMergeQueue,autoMergeRequest"]) else { return nil }
+        guard let data = try? await gh.run(["pr", "view", n, "-R", repo, "--json", "state,isInMergeQueue,autoMergeRequest"]) else {
+            return nil
+        }
         return try? JSONDecoder().decode(MergeState.self, from: data)
     }
 

@@ -15,7 +15,7 @@ private func checksResponse(prNumber: Int) throws -> Data {
         "data": [
             "rateLimit": data["rateLimit"]!,
             "repository": ["pullRequest": ["commits": pr["commits"]!]],
-        ],
+        ]
     ]
     return try JSONSerialization.data(withJSONObject: body)
 }
@@ -31,7 +31,9 @@ private func checksResponse(prNumber: Int) throws -> Data {
 }
 
 @Test func checksQueryThrowsWhenThePRIsMissing() async throws {
-    let body = Data(#"{"data":{"rateLimit":{"remaining":1,"limit":1,"cost":1,"resetAt":"2026-01-01T00:00:00Z","used":0,"nodeCount":0},"repository":{"pullRequest":null}}}"#.utf8)
+    let body = Data(
+        #"{"data":{"rateLimit":{"remaining":1,"limit":1,"cost":1,"resetAt":"2026-01-01T00:00:00Z","used":0,"nodeCount":0},"repository":{"pullRequest":null}}}"#
+            .utf8)
     let id = PrId(repo: RepoId(owner: "o", name: "r"), number: 1)
     await #expect(throws: GraphQLError.self) {
         _ = try await ChecksQuery.fetch(id, client: GraphQLClient(gh: MockGh { _ in body }))
