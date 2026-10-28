@@ -73,10 +73,11 @@ private func flaky(_ up: Box<Bool>, failure: GhError) -> GatedGh {
     #expect(m.selectedSourceIDs.isEmpty)                              // nothing is loaded for them until connected
 }
 
-@Test @MainActor func resettingSourcesWhileDisconnectedSaysSoInsteadOfDoingNothing() async {
+@Test @MainActor func resettingSourcesWhileDisconnectedIsANoOp() async {
     let m = model()
+    let before = m.catalog
     m.resetSources()
-    #expect(m.status?.contains("Connect to GitHub") == true)
+    #expect(m.catalog == before)                                     // no viewer to reseed from yet
 }
 
 @Test @MainActor func concurrentStartAttemptsRunOnce() async {

@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import GHCore
 
 /// Loads and remembers avatar images.
 ///
@@ -8,10 +9,12 @@ import AppKit
 /// - A failed load is retried after a delay that doubles each time (30 s up to 15 min), so a lost connection
 ///   does not leave avatars missing until the app restarts.
 /// - Decoded images are kept in a bounded, least-recently-used cache.
+/// - Requests carry the signed-in `gh` token once one is available (`configureAuth`), so an avatar behind SAML
+///   SSO - which serves a sign-in page instead of the image to an anonymous request - loads like any other.
 @MainActor
 @Observable
 final class AvatarStore {
-    typealias Fetch = @Sendable (URL, URLRequest.CachePolicy) async throws -> (Data, Int)
+    typealias Fetch = @Sendable (URL, URLRequest.CachePolicy, String?) async throws -> (Data, Int)
 
     static let shared = AvatarStore(fetch: AvatarStore.liveFetch)
 
@@ -25,6 +28,7 @@ final class AvatarStore {
     @ObservationIgnored private var useCounter = 0
     @ObservationIgnored private var failures: [URL: (retryAt: Date, attempts: Int)] = [:]
     @ObservationIgnored private var inflight: Set<URL> = []
+    @ObservationIgnored private var tokenCache: GhAuthTokenCache?
 
     @ObservationIgnored private let fetch: Fetch
     @ObservationIgnored private let now: () -> Date
@@ -43,6 +47,10 @@ final class AvatarStore {
         self.freshFor = freshFor
     }
 
+    /// Call once signed in, so avatar requests from here on carry the same credentials as every other
+    /// `gh`-backed request.
+    func configureAuth(gh: any GhRunner) { tokenCache = GhAuthTokenCache(gh: gh) }
+
     var cachedCount: Int { images.count }
 
     func image(for url: URL?) -> NSImage? {
@@ -57,13 +65,18 @@ final class AvatarStore {
         defer { inflight.remove(url) }
         if let f = failures[url], now() < f.retryAt { return }
         if let entry = images[url], now().timeIntervalSince(entry.fetchedAt) < freshFor { return }
+        let token = await tokenCache?.token()
 
-        if images[url] == nil, let (data, _) = try? await fetch(url, .returnCacheDataDontLoad), let image = decode(data) {
+        if images[url] == nil, let (data, _) = try? await fetch(url, .returnCacheDataDontLoad, token), let image = decode(data) {
             store(image, for: url, fetchedAt: .distantPast) // shown now, but not trusted as current
         }
         do {
-            let (data, status) = try await fetch(url, .reloadRevalidatingCacheData)
-            guard status == 200, let image = decode(data) else { recordFailure(url); return }
+            let (data, status) = try await fetch(url, .reloadRevalidatingCacheData, token)
+            guard status == 200, let image = decode(data) else {
+                if status == 401 { await tokenCache?.invalidate() } // the cached token stopped working; refetch next time
+                recordFailure(url)
+                return
+            }
             store(image, for: url, fetchedAt: now())
             failures[url] = nil
         } catch {
@@ -95,8 +108,10 @@ final class AvatarStore {
         return URLSession(configuration: config)
     }()
 
-    private nonisolated static func liveFetch(_ url: URL, _ policy: URLRequest.CachePolicy) async throws -> (Data, Int) {
-        let (data, response) = try await session.data(for: URLRequest(url: url, cachePolicy: policy))
+    private nonisolated static func liveFetch(_ url: URL, _ policy: URLRequest.CachePolicy, _ token: String?) async throws -> (Data, Int) {
+        var request = URLRequest(url: url, cachePolicy: policy)
+        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        let (data, response) = try await session.data(for: request)
         return (data, (response as? HTTPURLResponse)?.statusCode ?? 0)
     }
 }

@@ -108,7 +108,6 @@ private func model(_ defaults: UserDefaults, _ dir: URL) -> AppModel {
     for _ in 0..<200 where !m.busy.isEmpty { try? await Task.sleep(for: .milliseconds(5)) }
     #expect(m.connection == .problem(.accountChanged(was: "alice", now: "mallory")))
     #expect(await runner.requests().filter { $0.hasPrefix("pr:") }.isEmpty)       // nothing was sent
-    #expect(m.status?.contains("account changed") == true)
 
     await m.start(runner: { runner })                  // Retry switches over to the new account explicitly
     #expect(m.account == AccountScope(login: "mallory"))

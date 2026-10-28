@@ -18,7 +18,14 @@ struct SourceSidebar: View {
     /// Extra space above a group header. The list's own row spacing already separates headers from rows, so this
     /// only needs to be a little, or collapsed groups end up with wide empty bands between them.
     static let groupGap: CGFloat = 3
+    /// How far a repo row nests under its source: the disclosure chevron's own width (`SourceRow`'s
+    /// `frame(width: 10)`) plus the row's 8pt spacing - one nesting level, landing the repo's own icon
+    /// under where the source's avatar starts, rather than stacking a second icon-width on top of that
+    /// and pushing it out past the source's name.
+    static let repoIndent: CGFloat = 10 + 8
     @Binding var sheet: SourceSheetTarget?
+    /// The source row a drag is currently hovering, so it can show an insertion line.
+    @State private var dropTargetSourceID: String?
 
     var body: some View {
         List(selection: selection) {
@@ -33,15 +40,17 @@ struct SourceSidebar: View {
                 do {
                     let visible = group.isCollapsed ? [] : model.catalog.visibleSources(in: group)
                     ForEach(visible) { source in
-                        SourceRow(source: source)
+                        SourceRow(source: source, isDropTarget: dropTargetSourceID == source.id)
                             .tag(source.id)
                             .draggable(SourceDrag(kind: .source, id: source.id))
-                            .dropDestination(for: SourceDrag.self) { drops, _ in
+                            .dropDestination(for: SourceDrag.self, action: { drops, _ in
                                 let ids = drops.filter { $0.kind == .source }.map(\.id)
                                 guard !ids.isEmpty else { return false }
                                 model.dropSources(ids: ids, onto: source, inGroup: group.id)
                                 return true
-                            }
+                            }, isTargeted: { targeted in
+                                dropTargetSourceID = targeted ? source.id : (dropTargetSourceID == source.id ? nil : dropTargetSourceID)
+                            })
                             .contextMenu {
                                 Button { model.open(source) } label: { Label("Open on GitHub", systemImage: "safari") }
                                 Button { model.open(source, pullRequests: true) } label: {
@@ -63,11 +72,22 @@ struct SourceSidebar: View {
                         if model.settings.showRepoTree, source.repoId == nil, model.isExpanded(source) { RepoChildren(source: source) }
                     }
                     if visible.isEmpty && !group.isCollapsed {
-                        Text(group.sources.isEmpty ? "Drop sources here" : "All sources hidden")
-                            .font(.caption).foregroundStyle(.tertiary)
-                            .dropDestination(for: SourceDrag.self) { drops, _ in
-                                dropOnHeader(drops, group)
+                        // An icon and (when there's an action to take) a button, matching the weight of a real
+                        // row - plain floating text here looked out of place next to avatar/icon rows above it.
+                        HStack(spacing: 8) {
+                            Image(systemName: group.sources.isEmpty ? "tray" : "eye.slash")
+                                .font(.caption).foregroundStyle(.tertiary)
+                            Text(group.sources.isEmpty ? "Drop sources here" : "All sources hidden")
+                                .font(.caption).foregroundStyle(.tertiary)
+                            if !group.sources.isEmpty {
+                                Spacer(minLength: 4)
+                                Button("Show All") { model.setGroupHidden(group.id, false) }
+                                    .buttonStyle(.link).font(.caption)
                             }
+                        }
+                        .dropDestination(for: SourceDrag.self) { drops, _ in
+                            dropOnHeader(drops, group)
+                        }
                     }
                 }
             }
@@ -122,6 +142,8 @@ struct SourceSidebar: View {
 struct SourceRow: View {
     @Environment(AppModel.self) private var model
     let source: Source
+    /// Whether a sidebar drag is currently hovering this row, to show the insertion line.
+    var isDropTarget = false
 
     var body: some View {
         let counts = model.counts[source.id]
@@ -142,7 +164,18 @@ struct SourceRow: View {
                 Circle().fill(Color.accentColor).frame(width: 6, height: 6).help("New organization")
             }
             Spacer(minLength: 4)
-            CountBadges(counts: counts)
+            CountBadges(counts: counts, repoCount: source.repoId == nil ? model.repos(in: source).count : nil)
+        }
+        .dropInsertionIndicator(isDropTarget)
+    }
+}
+
+extension View {
+    /// An accent-colored line along a row's bottom edge, shown while a sidebar drag is hovering it, so dropping
+    /// a source or group has some visual feedback about where it will land.
+    @ViewBuilder func dropInsertionIndicator(_ active: Bool) -> some View {
+        overlay(alignment: .bottom) {
+            if active { Rectangle().fill(Color.accentColor).frame(height: 2) }
         }
     }
 }
@@ -222,7 +255,7 @@ struct InboxHeader: View {
                 HStack(spacing: 5) {
                     Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
                         .rotationEffect(.degrees(layout.inboxExpanded ? 90 : 0)).frame(width: 10)
-                    Text("Inbox").font(.system(size: 11, weight: .semibold))
+                    Text("Inbox").font(.caption.weight(.semibold))
                 }
                 .foregroundStyle(.secondary).contentShape(Rectangle())
             }
@@ -262,7 +295,7 @@ struct SavedViewsHeader: View {
                 HStack(spacing: 5) {
                     Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
                         .rotationEffect(.degrees(layout.savedViewsExpanded ? 90 : 0)).frame(width: 10)
-                    Text("Views").font(.system(size: 11, weight: .semibold))
+                    Text("Views").font(.caption.weight(.semibold))
                 }
                 .foregroundStyle(.secondary).contentShape(Rectangle())
             }
@@ -305,7 +338,12 @@ struct InboxRow: View {
             Spacer(minLength: 4)
             if let problem { Image(systemName: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange).help(problem) }
             else if loading { ProgressView().controlSize(.mini) }
-            else if count > 0 { CountPill(count: count, fill: tint ?? Color.secondary.opacity(0.2), text: tint == nil ? .secondary : .white) }
+            else if count > 0 {
+                // A filled pill only for sections with an urgent tint (needs your review, needs action);
+                // everything else is just a count, not something asking for attention.
+                if let tint { CountPill(count: count, fill: tint, text: .white) }
+                else { Text("\(count)").font(.caption2.weight(.semibold)).monospacedDigit().foregroundStyle(.secondary) }
+            }
         }
         .padding(.leading, indent ? 4 : 0)
         .help(title)
@@ -341,17 +379,17 @@ struct RepoChildren: View {
                 Spacer(minLength: 0)
                 Button("Retry") { Task { await model.retryFailedRepos() } }.controlSize(.mini)
             }
-            .font(.caption).foregroundStyle(.secondary).padding(.leading, 18).selectionDisabled()
+            .font(.caption).foregroundStyle(.secondary).padding(.leading, SourceSidebar.repoIndent).selectionDisabled()
         } else if repos.isEmpty {
             Group {
                 if model.loadingRepoSources.contains(source.id) { HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Loading repositories...") } }
                 else { Text("No repositories") }
             }
-            .font(.caption).foregroundStyle(.tertiary).padding(.leading, 18).selectionDisabled()
+            .font(.caption).foregroundStyle(.tertiary).padding(.leading, SourceSidebar.repoIndent).selectionDisabled()
         }
         if model.isTruncated(source) {
             Text("Showing the \(AppModel.maxReposPerSource) most recently pushed repositories.")
-                .font(.caption2).foregroundStyle(.tertiary).padding(.leading, 18).selectionDisabled()
+                .font(.caption2).foregroundStyle(.tertiary).padding(.leading, SourceSidebar.repoIndent).selectionDisabled()
         }
     }
 }
@@ -369,25 +407,31 @@ struct SidebarRepoRow: View {
             Spacer(minLength: 4)
             if repo.openPRs > 0 {
                 Text("\(repo.openPRs)").font(.caption2.weight(.semibold)).monospacedDigit().foregroundStyle(.secondary)
-                    .padding(.horizontal, 6).padding(.vertical, 1).background(Color.secondary.opacity(0.2), in: Capsule())
             }
         }
-        .padding(.leading, 18)
+        .padding(.leading, SourceSidebar.repoIndent)
         .contextMenu { RepoContextMenu(repo: repo.id) }
     }
 }
 
 /// Small marks beside a repository's name: a lock when it is private, an archive box when it is archived.
 struct RepoFlags: View {
+    @Environment(AppModel.self) private var model
     let repo: RepoInfo?
     /// PR lists leave the lock and the fork mark out: they are properties of the repository, not of the PR, and
     /// would only be noise on every row. Archived stays, because it explains why a PR cannot be acted on.
     var showsPrivate = true
     var showsFork = true
 
+    private var lockIconEnabled: Bool {
+        model.settings.repoSubtitleEntries.first { $0.item == .lockIcon }?.enabled ?? true
+    }
+
     var body: some View {
         if let repo {
-            if repo.isPrivate && showsPrivate {
+            // Internal repos set isPrivate too, but they are visible to everyone in the Enterprise account, not
+            // locked down the way a plain private repo is, so the lock would be misleading here.
+            if repo.isPrivate && repo.visibility != .internal && showsPrivate && lockIconEnabled {
                 Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary).help("Private repository")
             }
             if repo.isFork && showsFork {
@@ -419,8 +463,12 @@ struct RepoContextMenu: View {
 }
 
 /// Open PRs in gray; PRs waiting on the viewer's review in the accent color; a lock or warning if GitHub refused.
+/// Which badges show, and in what order, is configurable in Settings; `repoCount` is only known for a single
+/// source (not a whole group), so it is left nil there and that badge is simply skipped.
 struct CountBadges: View {
+    @Environment(AppModel.self) private var model
     let counts: SourceCounts?
+    var repoCount: Int? = nil
 
     var body: some View {
         if let c = counts {
@@ -430,17 +478,27 @@ struct CountBadges: View {
                     .help(c.needsSSO ? "This organization requires SAML SSO, and your gh token is not authorized for it yet.\n\n\(error)" : error)
             } else {
                 HStack(spacing: 4) {
-                    if c.reviewRequested > 0 {
-                        pill(c.reviewRequested, fill: Color.accentColor, text: .white)
-                            .help("\(c.reviewRequested) waiting for your review")
-                    }
-                    if c.open > 0 {
-                        pill(c.open, fill: Color.secondary.opacity(0.2), text: .secondary)
-                            .help("\(c.open) open pull requests")
+                    ForEach(model.settings.sourceBadgeEntries.filter(\.enabled)) { entry in
+                        badge(for: entry, counts: c)
                     }
                 }
             }
         }
+    }
+
+    @ViewBuilder private func badge(for entry: BadgeEntry<SourceBadgeItem>, counts c: SourceCounts) -> some View {
+        switch entry.item {
+        case .reviewRequested:
+            if c.reviewRequested > 0 { badge(c.reviewRequested, color: entry.color).help("\(c.reviewRequested) waiting for your review") }
+        case .openPRs:
+            if c.open > 0 { badge(c.open, color: .plain).help("\(c.open) open pull requests") }
+        case .repoCount:
+            if let repoCount, repoCount > 0 { badge(repoCount, color: .plain).help("\(repoCount) repositories") }
+        }
+    }
+
+    @ViewBuilder private func badge(_ n: Int, color: BadgeColor) -> some View {
+        if let fill = color.fill { pill(n, fill: fill, text: .white) } else { plainCount(n) }
     }
 
     private func pill(_ n: Int, fill: Color, text: Color) -> some View {
@@ -448,14 +506,28 @@ struct CountBadges: View {
             .padding(.horizontal, 6).padding(.vertical, 1)
             .background(fill, in: Capsule())
     }
+
+    private func plainCount(_ n: Int) -> some View {
+        Text("\(n)").font(.caption2.weight(.semibold)).monospacedDigit().foregroundStyle(.secondary)
+    }
 }
 
 struct GroupHeader: View {
     @Environment(AppModel.self) private var model
     let group: SourceGroup
     @Binding var sheet: SourceSheetTarget?
+    /// Whether a sidebar drag is currently hovering this header, to show the insertion line.
+    @State private var isDropTarget = false
+    /// The "+" only shows while hovering - permanently docking it on every header, alongside the chevron,
+    /// name, badges and hidden-count icon, was too many things fighting for one ~20pt-tall row. Right-click
+    /// "Add Source..." and the footer's "..." menu still cover adding when the pointer is elsewhere.
+    @State private var isHovered = false
 
     private var hiddenInGroup: Int { group.sources.filter(model.isSourceHidden).count }
+
+    /// True exactly when the group's own "All sources hidden" placeholder is about to show below this header -
+    /// in which case the header's hidden-count icon would just be saying the same thing a second time.
+    private var allHiddenAndShown: Bool { !group.isCollapsed && !group.sources.isEmpty && hiddenInGroup == group.sources.count }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -468,7 +540,7 @@ struct GroupHeader: View {
                         .font(.system(size: 9, weight: .bold))
                         .rotationEffect(.degrees(group.isCollapsed ? 0 : 90))
                         .frame(width: 10)
-                    Text(group.name).font(.system(size: 11, weight: .semibold))
+                    Text(group.name).font(.caption.weight(.semibold))
                 }
                 .foregroundStyle(.secondary)
                 .contentShape(Rectangle())
@@ -481,17 +553,21 @@ struct GroupHeader: View {
                 CountBadges(counts: model.totals(for: model.catalog.visibleSources(in: group)))
                     .help("\(group.sources.count - hiddenInGroup) sources")
             }
-            if hiddenInGroup > 0 {
+            if hiddenInGroup > 0 && !allHiddenAndShown {
                 Image(systemName: "eye.slash").font(.caption2).foregroundStyle(.tertiary)
                     .help("\(hiddenInGroup) hidden in this group")
             }
             Button { sheet = .add(group: group.id) } label: { Image(systemName: "plus").font(.caption.weight(.semibold)) }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 .help("Add a source to \(group.name)")
+                .opacity(isHovered ? 1 : 0)
+                .allowsHitTesting(isHovered)
         }
+        .onHover { isHovered = $0 }
+        .dropInsertionIndicator(isDropTarget)
         .contentShape(Rectangle())
         .draggable(SourceDrag(kind: .group, id: group.id.uuidString))
-        .dropDestination(for: SourceDrag.self) { drops, _ in
+        .dropDestination(for: SourceDrag.self, action: { drops, _ in
             let sources = drops.filter { $0.kind == .source }.map(\.id)
             if !sources.isEmpty { model.dropSources(ids: sources, onto: nil, inGroup: group.id); return true }
             if let dragged = drops.first(where: { $0.kind == .group }).flatMap({ UUID(uuidString: $0.id) }) {
@@ -499,7 +575,7 @@ struct GroupHeader: View {
                 return true
             }
             return false
-        }
+        }, isTargeted: { isDropTarget = $0 })
         .contextMenu {
             Button("Browse All in Group") {
                 model.selectedSourceIDs = Set(model.catalog.visibleSources(in: group).map(\.id))

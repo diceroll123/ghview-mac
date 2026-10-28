@@ -3,6 +3,7 @@ import GHCore
 
 struct ContentView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openSettings) private var openSettings
     @State private var sourceSheet: SourceSheetTarget?
 
     var body: some View {
@@ -11,19 +12,21 @@ struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 200, ideal: 260, max: 380)
             .sheet(item: $sourceSheet) { target in
                 switch target {
-                case .manage: SourcesManagerSheet()
                 case .newGroup, .renameGroup: GroupNameSheet(target: target)
                 case .add, .edit: SourceEditSheet(target: target)
                 case .newView, .editView: SavedViewSheet(target: target)
                 }
             }
             .overlay {
+                // Only when there is not even a group to show a "Drop sources here"/"All sources hidden" row in -
+                // otherwise this collided with that per-group messaging, stacking a giant centered icon and an
+                // oddly-placed button on top of a sidebar that was already explaining itself.
                 if model.isStarting { ProgressView("Connecting to GitHub...") }
-                else if model.sources.isEmpty {
+                else if model.catalog.groups.isEmpty {
                     ContentUnavailableView {
-                        Label(model.allSources.isEmpty ? "No sources" : "All sources hidden", systemImage: "eye.slash")
+                        Label("No sources", systemImage: "eye.slash")
                     } actions: {
-                        Button("Manage Sources...") { sourceSheet = .manage }
+                        Button("Manage Sources...") { model.pendingSettingsTab = .sources; openSettings() }
                     }
                 }
             }
@@ -120,7 +123,7 @@ enum SourceView: String, CaseIterable, Identifiable {
 struct ResizableSplit<Leading: View, Trailing: View>: View {
     @AppStorage("repoPaneWidth") private var width: Double = 260
     @State private var startWidth: Double?
-    let minWidth: Double = 200, maxWidth: Double = 420
+    let minWidth: Double = 200, maxWidth: Double = 380
     @ViewBuilder let leading: () -> Leading
     @ViewBuilder let trailing: () -> Trailing
 
@@ -140,7 +143,7 @@ struct ResizableSplit<Leading: View, Trailing: View>: View {
                             }
                             .onEnded { _ in startWidth = nil })
                 }
-            trailing().frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+            trailing().frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -158,7 +161,7 @@ struct RepoBrowserView: View {
                 LanguageIcon(language: repo.language)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(combined ? repo.id.fullName : repo.id.name).lineLimit(1)
-                    if let lang = repo.language { Text(lang).font(.caption).foregroundStyle(.secondary) }
+                    RepoSubtitleLine(repo: repo, items: model.settings.repoSubtitleEntries.enabled().filter { $0 != .lockIcon })
                 }
                 RepoFlags(repo: repo)
                 Spacer(minLength: 4)
@@ -331,7 +334,6 @@ enum SourceSheetTarget: Identifiable {
     /// Adding, optionally straight into a group (the "+" on a group header).
     case add(group: UUID?)
     case edit(Source)
-    case manage
     case newGroup
     case renameGroup(UUID)
     /// A new saved view, optionally starting from a query ("Save as View..." on a shortcut).
@@ -341,7 +343,6 @@ enum SourceSheetTarget: Identifiable {
         switch self {
         case .add(let g): "add-\(g?.uuidString ?? "any")"
         case .edit(let s): "edit-\(s.id)"
-        case .manage: "manage"
         case .newGroup: "new-group"
         case .renameGroup(let g): "rename-\(g)"
         case .newView(let q): "new-view-\(q)"
@@ -352,6 +353,7 @@ enum SourceSheetTarget: Identifiable {
 
 struct SidebarFooter: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openSettings) private var openSettings
     let onSheet: (SourceSheetTarget) -> Void
     @State private var showUsage = false
 
@@ -361,43 +363,45 @@ struct SidebarFooter: View {
         return left < 0.05 ? .red : (left < 0.2 ? .orange : .secondary)
     }
 
+    /// "Manage Sources" used to be its own sheet; it is the Sources tab in Settings now.
+    private func openSourcesSettings() {
+        model.pendingSettingsTab = .sources
+        openSettings()
+    }
+
     var body: some View {
         HStack(spacing: 6) {
-            if let account = model.account {
-                Text("@\(account.login)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    .help("Signed in to GitHub through gh as @\(account.login)")
-            }
             if let rl = model.rateLimit {
                 Button { showUsage.toggle() } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "gauge.with.dots.needle.bottom.50percent")
-                        Text("API \(rl.remaining.formatted())/\(rl.limit.formatted())").monospacedDigit()
+                        HStack(spacing: 2) {
+                            Text("API")
+                            Text(rl.remaining.formatted()).contentTransition(.numericText(value: Double(rl.remaining)))
+                            Text("/")
+                            Text(rl.limit.formatted()).contentTransition(.numericText(value: Double(rl.limit)))
+                        }
+                        .monospacedDigit()
+                        .animation(.default, value: rl.remaining)
                     }
                     .foregroundStyle(usageColor(rl))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Show API usage details")
+                .help(model.account.map { "Signed in as @\($0.login). Click for API usage details." } ?? "Show API usage details")
                 .popover(isPresented: $showUsage, arrowEdge: .top) { RateLimitDetail() }
             }
             Spacer()
-            if model.newOrgCount > 0 {
-                Button { onSheet(.manage) } label: {
-                    Label("\(model.newOrgCount) new", systemImage: "sparkles").foregroundStyle(Color.accentColor)
-                }
-                .buttonStyle(.plain)
-                .help("\(model.newOrgCount) organizations were found since last time. Click to review them.")
-            }
-            if model.hiddenCount + model.hiddenSidebarCount > 0 {
-                Button { onSheet(.manage) } label: {
-                    Label("\(model.hiddenCount + model.hiddenSidebarCount)", systemImage: "eye.slash")
-                }
-                .buttonStyle(.plain)
-                .help("\(model.hiddenCount) hidden sources and \(model.hiddenSidebarCount) hidden Inbox, shortcut or saved view items. Click to show them again.")
-            }
             Menu {
                 Button("New Group...") { onSheet(.newGroup) }
-                Button("Manage Sources...") { onSheet(.manage) }
+                Button("Manage Sources...") { openSourcesSettings() }
+                if model.newOrgCount > 0 {
+                    Button("\(model.newOrgCount) New Organization\(model.newOrgCount == 1 ? "" : "s") Found...") { openSourcesSettings() }
+                }
+                if model.hiddenCount + model.hiddenSidebarCount > 0 {
+                    let n = model.hiddenCount + model.hiddenSidebarCount
+                    Button("\(n) Hidden Item\(n == 1 ? "" : "s")...") { openSourcesSettings() }
+                }
                 if !model.missingOrgs.isEmpty {
                     Button("Add My Organizations (\(model.missingOrgs.count))") { model.addMissingOrgs() }
                 }
@@ -420,6 +424,9 @@ struct SidebarFooter: View {
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             .help("Arrange and manage sources")
         }
+        // Loaded here, ahead of time, so the usage popover already has its full content (and size) the moment
+        // it opens, instead of growing once this free call resolves after the popover is already on screen.
+        .task(id: model.account) { await model.loadRateBuckets() }
         .font(.caption).foregroundStyle(.secondary)
         .padding(.horizontal, 12).padding(.vertical, 8)
     }
@@ -554,7 +561,7 @@ struct SourceEditSheet: View {
                 switch target {
                 case .add: try await model.addSource(name, group: groupChoice, resolved: foundSource)
                 case .edit(let old): try await model.updateSource(old, to: name, resolved: foundSource)
-                case .manage, .newGroup, .renameGroup, .newView, .editView: break // handled by their own sheets
+                case .newGroup, .renameGroup, .newView, .editView: break // handled by their own sheets
                 }
                 dismiss()
             } catch { message = error.localizedDescription }
@@ -578,20 +585,20 @@ struct RateLimitDetail: View {
             }
             if let rl = model.rateLimit { graphQL(rl) }
             let others = model.rateBuckets.filter { $0.name != "graphql" } // GraphQL's own numbers are authoritative
-            if !others.isEmpty {
+            if !model.rateBucketsLoaded {
+                // A skeleton reserving roughly the real content's space, so the popover does not resize once the
+                // (normally near-instant) fetch lands - it only ever shrinks slightly if there turn out to be
+                // fewer buckets than this, never grows after the user is already looking at it.
+                Divider()
+                Text("Other limits").font(.subheadline).foregroundStyle(.secondary)
+                ForEach(0..<2, id: \.self) { _ in otherLimitRow(title: "Loading", remaining: 0, limit: 0, fractionUsed: 0, resetAt: .now) }
+                    .redacted(reason: .placeholder).shimmering()
+            } else if !others.isEmpty {
                 Divider()
                 Text("Other limits").font(.subheadline).foregroundStyle(.secondary)
                 ForEach(others) { bucket in
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack {
-                            Text(bucket.title)
-                            Spacer()
-                            Text("\(bucket.remaining.formatted()) / \(bucket.limit.formatted())").monospacedDigit()
-                        }
-                        ProgressView(value: bucket.fractionUsed).tint(tint(bucket.fractionUsed))
-                        HStack(spacing: 4) { Text("resets in"); Text(bucket.resetAt, style: .relative) }
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
+                    otherLimitRow(title: bucket.title, remaining: bucket.remaining, limit: bucket.limit,
+                                  fractionUsed: bucket.fractionUsed, resetAt: bucket.resetAt)
                 }
             }
             Divider()
@@ -605,6 +612,19 @@ struct RateLimitDetail: View {
         .padding(14)
         .frame(width: 380)
         .task { await model.loadRateBuckets() }
+    }
+
+    private func otherLimitRow(title: String, remaining: Int, limit: Int, fractionUsed: Double, resetAt: Date) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text("\(remaining.formatted()) / \(limit.formatted())").monospacedDigit()
+            }
+            ProgressView(value: fractionUsed).tint(tint(fractionUsed))
+            HStack(spacing: 4) { Text("resets in"); Text(resetAt, style: .relative) }
+                .font(.caption).foregroundStyle(.secondary)
+        }
     }
 
     private func tint(_ fractionUsed: Double) -> Color {
@@ -663,118 +683,3 @@ struct RateLimitDetail: View {
     }
 }
 
-/// Show or hide sources without deleting them. Bulk buttons act on whatever the search matches, so with dozens
-/// of orgs you can search "acme" and keep only those.
-struct SourcesManagerSheet: View {
-    @Environment(AppModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
-    @State private var query = ""
-
-    private var matches: [Source] {
-        query.isEmpty ? model.allSources : model.allSources.filter { $0.name.localizedCaseInsensitiveContains(query) }
-    }
-    private var scope: String { query.isEmpty ? "all" : "\(matches.count) matching" }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Manage Sources").font(.headline)
-                Spacer()
-                Text("\(model.allSources.count - model.hiddenCount) of \(model.allSources.count) shown")
-                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
-            }
-            if model.newOrgCount > 0 {
-                HStack {
-                    Label("\(model.newOrgCount) new organization\(model.newOrgCount == 1 ? "" : "s") found", systemImage: "sparkles")
-                    Spacer()
-                    Button("Show them") { model.showNewSources() }
-                    Button("Keep as is") { model.markNewSourcesSeen() }
-                }
-                .font(.callout).controlSize(.small)
-                .padding(8).background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                Toggle("Show Inbox", isOn: Binding(get: { !model.layout.inboxHidden }, set: { model.setInboxHidden(!$0) }))
-                Toggle("Show the built-in searches in Views (Authored by me, Assigned to me, ...)", isOn: Binding(
-                    get: { !model.layout.quickSearchesHidden }, set: { model.setQuickSearchesHidden(!$0) }))
-                Toggle("Show Views", isOn: Binding(get: { !model.layout.savedViewsHidden }, set: { model.setSavedViewsHidden(!$0) }))
-                Divider()
-                Toggle("Hide sources with no open PRs", isOn: Binding(get: { model.catalog.settings.autoHideEmpty },
-                                                                       set: { model.setAutoHideEmpty($0) }))
-                    .help("Hides sources that have nothing open. Anything you show by hand, and the source you are viewing, stays visible.")
-                Picker("New organizations start", selection: Binding(get: { model.catalog.settings.newOrgPolicy },
-                                                                      set: { model.setNewOrgPolicy($0) })) {
-                    Text("Hidden").tag(SourceSettings.NewOrgPolicy.hidden)
-                    Text("Visible").tag(SourceSettings.NewOrgPolicy.visible)
-                }
-                .pickerStyle(.segmented).fixedSize()
-            }
-            .font(.callout)
-            TextField("Search sources", text: $query).textFieldStyle(.roundedBorder)
-            List {
-                ForEach(model.catalog.groups) { group in
-                    let rows = group.sources.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
-                    if !rows.isEmpty || query.isEmpty {
-                        Section {
-                            ForEach(rows) { source in
-                                HStack {
-                                    Toggle(isOn: Binding(get: { !model.isSourceHidden(source) },
-                                                         set: { model.setSourcesHidden([source], !$0) })) {
-                                        HStack(spacing: 8) {
-                                            AvatarView(source: source, size: 16)
-                                            Text(source.displayName)
-                                                .foregroundStyle(model.catalog.isAutoHidden(source) ? .secondary : .primary)
-                                            if model.catalog.isNew(source) {
-                                                Text("NEW").font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
-                                                    .padding(.horizontal, 5).padding(.vertical, 1)
-                                                    .background(Color.accentColor, in: Capsule())
-                                            }
-                                            if model.catalog.isAutoHidden(source) {
-                                                Text("no open PRs").font(.caption).foregroundStyle(.tertiary)
-                                            }
-                                        }
-                                    }
-                                    .toggleStyle(.checkbox)
-                                    Spacer()
-                                    CountBadges(counts: model.counts[source.id])
-                                    Menu("Move to") {
-                                        ForEach(model.catalog.groups.filter { $0.id != group.id }) { other in
-                                            Button(other.name) { model.moveSources([source], toGroup: other.id) }
-                                        }
-                                    }
-                                    .menuStyle(.borderlessButton).fixedSize().foregroundStyle(.secondary)
-                                    .disabled(model.catalog.groups.count < 2)
-                                }
-                            }
-                            if rows.isEmpty { Text("No sources").font(.caption).foregroundStyle(.tertiary) }
-                        } header: {
-                            HStack {
-                                Text(group.name)
-                                Spacer()
-                                Button("Show all") { model.setGroupHidden(group.id, false) }.buttonStyle(.link)
-                                Button("Hide all") { model.setGroupHidden(group.id, true) }.buttonStyle(.link)
-                            }
-                            .font(.caption)
-                        }
-                    }
-                }
-            }
-            .frame(minHeight: 280)
-            .overlay { if matches.isEmpty && !query.isEmpty { Text("No matching sources").foregroundStyle(.secondary) } }
-            FlowLayout(spacing: 6) {
-                Button("Show \(scope)") { model.setSourcesHidden(matches, false) }
-                Button("Hide \(scope)") { model.setSourcesHidden(matches, true) }
-                Button("Show only \(scope)") { model.showOnlySources(matches) }
-                Button("Hide all organizations") { model.hideAllOrganizations() }
-            }
-            .controlSize(.small)
-            HStack {
-                Text("Hidden sources are kept and can be shown again at any time.").font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(18)
-        .frame(width: 480, height: 620)
-    }
-}

@@ -33,25 +33,56 @@ struct PRDetailView: View {
         }
     }
 
-    /// Title, a segmented progress bar, and a legend. Nothing but "No checks" when there are none.
+    /// Title, a segmented progress bar, a legend and the individual check runs - all fetched lazily together
+    /// (see `AppModel.loadChecks`), since even the breakdown behind the bar is real work for GitHub when a commit
+    /// has hundreds of checks. `pr.checkSummary` (always present, from the rollup's cheap combined state) says
+    /// at a glance whether there is anything to fetch at all.
     @ViewBuilder
-    private func checksHeader(_ pr: PR) -> some View {
-        let counts = pr.checkCounts
-        HStack(alignment: .firstTextBaseline) {
+    private func checksSection(_ pr: PR) -> some View {
+        if pr.checkSummary == .unknown {
             Text("Checks").font(.headline)
-            Spacer()
-            if !counts.isEmpty {
-                Text(verbatim: "\(counts.done) of \(counts.total) done").font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        if counts.isEmpty {
             Text("No checks").foregroundStyle(.secondary)
         } else {
-            ChecksBar(counts: counts, height: 8)
-            ChecksLegend(counts: counts)
-            if pr.checks.count < counts.total {
-                Text(verbatim: "Listing the first \(pr.checks.count) of \(counts.total) checks")
-                    .font(.caption).foregroundStyle(.tertiary)
+            switch model.checkRuns[model.checksKey(pr)] {
+            case nil, .loading:
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Checks").font(.headline)
+                    Spacer()
+                    ProgressView().controlSize(.small)
+                }
+            case .failed(let message):
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Checks").font(.headline)
+                    Spacer()
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                    Button("Retry") { Task { await model.loadChecks(pr, force: true) } }
+                }
+            case .loaded(let runs, let counts):
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Checks").font(.headline)
+                    Spacer()
+                    if !counts.isEmpty {
+                        Text(verbatim: "\(counts.done) of \(counts.total) done").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                if counts.isEmpty {
+                    Text("No checks").foregroundStyle(.secondary)
+                } else {
+                    ChecksBar(counts: counts, height: 8)
+                    ChecksLegend(counts: counts)
+                    if runs.count < counts.total {
+                        Text(verbatim: "Listing the first \(runs.count) of \(counts.total) checks")
+                            .font(.caption).foregroundStyle(.tertiary)
+                    }
+                    ForEach(Self.actionableFirst(runs)) { check in
+                        HStack {
+                            CheckIcon(status: check.status)
+                            Text(check.name)
+                            Spacer()
+                            if let url = check.url.flatMap(URL.init) { Link("Open", destination: url) }
+                        }
+                    }
+                }
             }
         }
     }
@@ -98,40 +129,66 @@ struct PRDetailView: View {
                             }
                         }
                     }
-                    if !pr.requestedReviewers.isEmpty || !pr.requestedTeams.isEmpty {
-                        let names = pr.requestedReviewers + pr.requestedTeams.map { "\($0.fullName) (team)" }
-                        let more = pr.reviewersTruncated ? ", +\((pr.reviewRequestTotal ?? 0) - names.count) more" : ""
-                        Text("Reviewers: " + names.joined(separator: ", ") + more).font(.callout)
-                    }
+                    reviewersSection(pr)
                     Divider()
-                    checksHeader(pr)
-                    ForEach(Self.actionableFirst(pr.checks)) { check in
-                        HStack {
-                            CheckIcon(status: check.status)
-                            Text(check.name)
-                            Spacer()
-                            if let url = check.url.flatMap(URL.init) { Link("Open", destination: url) }
-                        }
-                    }
+                    checksSection(pr)
                 }
                 .padding()
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .task(id: model.checksKey(pr)) { await model.loadChecks(pr) }
+            .task(id: model.activityKey(pr)) { await model.loadReviewers(pr) }
+    }
+
+    /// Who was asked to review. The total comes with every PR, so this can tell at a glance whether there is
+    /// anything to show; the names themselves are fetched lazily unless the PR already carries them (the inbox's
+    /// review-requested search does, to tell a direct request from a team one).
+    @ViewBuilder
+    private func reviewersSection(_ pr: PR) -> some View {
+        let total = pr.reviewRequestTotal ?? 0
+        if total > 0 {
+            if !pr.requestedReviewers.isEmpty || !pr.requestedTeams.isEmpty {
+                reviewersText(reviewers: pr.requestedReviewers, teams: pr.requestedTeams, total: total)
+            } else {
+                switch model.reviewRequests[model.activityKey(pr)] {
+                case nil, .loading:
+                    HStack { ProgressView().controlSize(.small); Text("Loading reviewers...").foregroundStyle(.secondary) }
+                        .font(.callout)
+                case .failed(let message):
+                    HStack {
+                        Text(message).font(.caption).foregroundStyle(.secondary)
+                        Button("Retry") { Task { await model.loadReviewers(pr, force: true) } }
+                    }
+                case .loaded(let reviewers, let teams):
+                    reviewersText(reviewers: reviewers, teams: teams, total: total)
+                }
+            }
+        }
+    }
+
+    private func reviewersText(reviewers: [String], teams: [ReviewTeam], total: Int) -> some View {
+        let names = reviewers + teams.map { "\($0.fullName) (team)" }
+        let more = names.count < total ? ", +\(total - names.count) more" : ""
+        return Text("Reviewers: " + names.joined(separator: ", ") + more).font(.callout)
     }
 }
 
-/// The PR's current head commit, abbreviated. Click to copy the full hash; right-click for the commit on GitHub.
+/// The PR's current head commit, abbreviated. Click to open it on GitHub; right-click to copy its hash.
 struct HeadCommit: View {
     @Environment(AppModel.self) private var model
     let pr: PR
 
     var body: some View {
-        Button { model.copy(pr.headSha) } label: {
+        Button {
+            if let url = pr.headCommitURL { NSWorkspace.shared.open(url) }
+        } label: {
             Label(pr.shortHeadSha, systemImage: "number")
                 .font(.caption.monospaced()).foregroundStyle(.secondary)
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
         }
         .buttonStyle(.plain)
-        .help("Head commit \(pr.headSha). Click to copy.")
+        .help("Head commit \(pr.headSha). Click to open on GitHub.")
         .contextMenu {
             Button("Copy Full Hash") { model.copy(pr.headSha) }
             Button("Copy Short Hash") { model.copy(pr.shortHeadSha) }

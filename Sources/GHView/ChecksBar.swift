@@ -49,8 +49,9 @@ struct ChecksBar: View {
         .help(counts.summary)
     }
 
-    /// Diagonal bands that drift to the right, so a running check reads as work in progress.
-    private static func stripes(in rect: CGRect, phase: Double, into layer: inout GraphicsContext) {
+    /// Diagonal bands that drift to the right, so a running check reads as work in progress. Shared with
+    /// `BatchProgressBar`, which draws the same "still working" tail for a running batch action.
+    static func stripes(in rect: CGRect, phase: Double, into layer: inout GraphicsContext) {
         let period: CGFloat = 10, band: CGFloat = 5, speed: Double = 14
         let offset = CGFloat((phase * speed).truncatingRemainder(dividingBy: Double(period)))
         let slant = rect.height

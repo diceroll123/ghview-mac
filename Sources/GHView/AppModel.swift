@@ -18,6 +18,25 @@ enum ActivityState {
     case failed(String)
 }
 
+/// Progress of a running batch action (merge, close, a dependabot command, ...), shown at the bottom of the
+/// PR list. `total` of 1 just means "working", with no count to show.
+struct BatchProgress: Equatable {
+    var done: Int
+    var total: Int
+}
+
+enum ChecksState {
+    case loading
+    case loaded(checks: [CheckRun], counts: CheckCounts)
+    case failed(String)
+}
+
+enum ReviewersState {
+    case loading
+    case loaded(reviewers: [String], teams: [ReviewTeam])
+    case failed(String)
+}
+
 /// An action the user must confirm because it touches several PRs and cannot be undone.
 struct PendingAction: Identifiable {
     let id = UUID()
@@ -260,9 +279,14 @@ final class AppModel {
     var callLog: [GhCall] = []
     @ObservationIgnored let ghCalls = GhCallLog()
     var rateBuckets: [RateBucket] = []
-    var status: String?
+    /// Set once `loadRateBuckets()` has completed at least once, so the usage popover can tell "still loading"
+    /// from "loaded, nothing extra to show" and reserve a skeleton's worth of space either way, rather than
+    /// resizing once the (normally near-instant) fetch lands.
+    var rateBucketsLoaded = false
     var diffs: [String: DiffState] = [:]
     var activities: [String: ActivityState] = [:]
+    var checkRuns: [String: ChecksState] = [:]
+    var reviewRequests: [String: ReviewersState] = [:]
     var isStarting = true
     /// Sources whose repository list is being fetched right now.
     var loadingRepoSources: Set<String> = []
@@ -288,8 +312,14 @@ final class AppModel {
     func method(for pr: PR) -> MergeMethod? { ActionOptions(mergeMethod: mergeMethod).method(for: repoInfo(for: pr.repo)) }
     /// PRs with a mutation in flight. A second action on any of them is refused until the first finishes.
     private(set) var busy: Set<PrId> = []
+    /// How far a running batch action has gotten, for the progress indicator at the bottom of the list. Nil
+    /// when nothing is running.
+    private(set) var batchProgress: BatchProgress?
     /// A bulk merge or close waiting for the user to confirm the exact targets.
     var pendingConfirmation: PendingAction?
+    /// Set right before opening the Settings window from somewhere that means a specific tab (e.g. "Manage
+    /// Sources..."), so it opens there instead of wherever it last was.
+    var pendingSettingsTab: SettingsTab?
 
     private var loadTask: Task<Void, Never>?
 
@@ -358,6 +388,7 @@ final class AppModel {
         gh = runner
         client = GraphQLClient(gh: runner)
         actions = PrActions(gh: runner)
+        AvatarStore.shared.configureAuth(gh: runner) // so avatars behind SAML SSO load with the same credentials
     }
 
     // MARK: Account
@@ -458,7 +489,7 @@ final class AppModel {
             // Orgs joined since last time arrive flagged "new" (hidden by default); cached counts apply the empty rule at once.
             let discovered = catalog.discover(orgs: v.orgs)
             catalog.updateAutoHidden(counts: counts, keeping: selectedSourceIDs)
-            if !discovered.isEmpty { catalog.save(to: defaults, key: catalogKey); status = "\(discovered.count) new organization\(discovered.count == 1 ? "" : "s") found" }
+            if !discovered.isEmpty { catalog.save(to: defaults, key: catalogKey) }
             connection = .connected
             error = nil
             if destination == nil { selectedSource = sources.first } // the content view's onChange loads its PRs
@@ -473,6 +504,27 @@ final class AppModel {
             connection = .problem(ConnectionProblem.classify(error))
         }
     }
+
+#if DEBUG
+    /// Loads fixed, fake data instead of connecting to `gh` at all - for taking screenshots. Debug builds only;
+    /// see scripts/generate-screenshot.sh for how this is triggered.
+    func startDemo() {
+        viewer = Viewer(login: "octocat", orgs: [DemoFixtures.orgLogin])
+        account = AccountScope(login: "octocat")
+        catalog = SourceCatalog.seeded(from: [.org(DemoFixtures.orgLogin)])
+        counts = DemoFixtures.counts
+        repoCache[Source.org(DemoFixtures.orgLogin).id] = (date: Date(), repos: DemoFixtures.repos, truncated: false)
+        prs = DemoFixtures.prs
+        hasLoadedPRs = true
+        rateLimit = DemoFixtures.rateLimit
+        settings.showRepoTree = true
+        layout.expandedSources.insert(Source.org(DemoFixtures.orgLogin).id)
+        selectedSource = Source.org(DemoFixtures.orgLogin)
+        browsingRepos = true
+        connection = .connected
+        isStarting = false
+    }
+#endif
 
     /// Fetches the repositories of `sources` that are not cached (or whose cache is over five minutes old). Each
     /// source stands alone: results are cached per source, and one source failing is recorded in `repoFailures`
@@ -682,7 +734,7 @@ final class AppModel {
         var rounds = 0
         do {
             repeat {
-                let r = try await CombinedPRs.fetchNext(pager, existing: all, skipFailed: true, client: client)
+                let r = try await CombinedPRs.fetchNext(pager, existing: all, skipFailed: true, needsReviewers: true, client: client)
                 pager = r.pager; all = r.prs; limits += r.rateLimits
                 rounds += 1
             } while pager.pending.contains(where: { pager.chunks[$0].lastError == nil }) && rounds < Self.maxInboxPages
@@ -915,12 +967,12 @@ final class AppModel {
                     for rl in limits { record(label, rl) }
                     if reloadCount > 0 { reconcileWithLoaded() }
                 } else if let repo {
-                    var page = try await PullRequestQuery.fetchRepo(repo, first: 30, after: cursor, client: client)
+                    var page = try await PullRequestQuery.fetchRepo(repo, after: cursor, client: client)
                     var loaded = page.prs
                     var limits = [page.rateLimit]
                     var extra = 0
                     while loaded.count < reloadCount, page.hasNextPage, extra < Self.maxRefreshPages, !Task.isCancelled {
-                        page = try await PullRequestQuery.fetchRepo(repo, first: 30, after: page.endCursor, client: client)
+                        page = try await PullRequestQuery.fetchRepo(repo, after: page.endCursor, client: client)
                         loaded += page.prs
                         limits.append(page.rateLimit)
                         extra += 1
@@ -1032,6 +1084,7 @@ final class AppModel {
     func loadRateBuckets() async {
         guard let gh else { return }
         if let buckets = try? await RateLimitAPI.fetchBuckets(gh: gh) { rateBuckets = buckets }
+        rateBucketsLoaded = true
     }
 
     // MARK: Diffs
@@ -1049,10 +1102,7 @@ final class AppModel {
         do {
             let result = try await DiffFetcher.fetchResult(pr, gh: gh)
             diffs[key] = .loaded(result.files)
-            if result.usedCurrentDiff {
-                status = "Showing #\(pr.number)'s current diff: the list was out of date. Refreshing..."
-                refresh()
-            }
+            if result.usedCurrentDiff { refresh() }
         } catch { diffs[key] = .failed(error.localizedDescription) }
     }
 
@@ -1074,6 +1124,45 @@ final class AppModel {
             activities[key] = .loaded(activity)
         }
         catch { activities[key] = .failed(error.localizedDescription) }
+    }
+
+    // MARK: Checks (individual check runs, shown in the detail view)
+
+    /// Keyed by head commit: a new push produces a new key, so the stored checks are refetched for it.
+    func checksKey(_ pr: PR) -> String { "\(pr.repo.fullName)#\(pr.number)@\(pr.headSha)" }
+
+    func loadChecks(_ pr: PR, force: Bool = false) async {
+        guard let client else { return }
+        let key = checksKey(pr)
+        if !force, checkRuns[key] != nil { return }
+        // The rollup's combined state (always present) is unknown only when there are no checks at all: nothing
+        // to fetch.
+        guard pr.checkSummary != .unknown else { checkRuns[key] = .loaded(checks: [], counts: CheckCounts()); return }
+        if checkRuns.count > 30 { checkRuns = checkRuns.filter { $0.key == key } }
+        if case .loaded = checkRuns[key] {} else { checkRuns[key] = .loading }
+        do {
+            let (runs, counts, rl) = try await ChecksQuery.fetch(pr.id, client: client)
+            record("Checks: \(pr.repo.name)#\(pr.number)", rl)
+            checkRuns[key] = .loaded(checks: runs, counts: counts)
+        } catch { checkRuns[key] = .failed(error.localizedDescription) }
+    }
+
+    // MARK: Reviewers (who was asked to review, shown in the detail view)
+
+    /// Keyed like activity: a new review request bumps `updatedAt` the same as any other change to the PR.
+    func loadReviewers(_ pr: PR, force: Bool = false) async {
+        guard let client else { return }
+        // Already carried on the PR itself (the inbox's review-requested search fetches it eagerly).
+        if !force, !pr.requestedReviewers.isEmpty || !pr.requestedTeams.isEmpty { return }
+        let key = activityKey(pr)
+        if !force, reviewRequests[key] != nil { return }
+        if reviewRequests.count > 30 { reviewRequests = reviewRequests.filter { $0.key == key } }
+        if case .loaded = reviewRequests[key] {} else { reviewRequests[key] = .loading }
+        do {
+            let (reviewers, teams, rl) = try await ReviewersQuery.fetch(pr.id, client: client)
+            record("Reviewers: \(pr.repo.name)#\(pr.number)", rl)
+            reviewRequests[key] = .loaded(reviewers: reviewers, teams: teams)
+        } catch { reviewRequests[key] = .failed(error.localizedDescription) }
     }
 
     /// Unsent comments, per PR. They live here rather than in the composer view so visiting another PR or tab
@@ -1110,28 +1199,26 @@ final class AppModel {
     func postComment(_ text: String, on pr: PR) async throws {
         guard let actions else { return }
         try await actions.postComment(text, on: pr)
-        status = "Commented on #\(pr.number)"
     }
 
     // MARK: Source counts
 
-    /// One GraphQL request for every source (1 point for dozens). Failures keep the last known numbers.
+    /// Several small, concurrent GraphQL requests (1 point each) rather than one big one, so a gateway hiccup on
+    /// a big catalog only misses a few sources' counts instead of failing the whole refresh. Whatever does not
+    /// come back this round keeps its last known number.
     func loadCounts() async {
         guard let client, !countsLoading else { return }
         let sources = catalog.allSources
         guard !sources.isEmpty else { return }
         countsLoading = true; defer { countsLoading = false }
-        do {
-            let (fresh, limits) = try await SourceCountsQuery.fetch(sources, client: client)
-            counts = fresh
-            countedIDs = Set(sources.map(\.id))
-            SourceCountsCache.save(fresh, to: countsURL)
-            catalog.updateAutoHidden(counts: fresh, keeping: selectedSourceIDs)
-            persistSources()
-            for rl in limits { record("Source counts (\(sources.count))", rl) }
-        } catch {
-            // keep what we have; the badges are a convenience and must not interrupt anything
-        }
+        let (fresh, limits) = await SourceCountsQuery.fetch(sources, client: client)
+        guard !fresh.isEmpty else { return } // every batch failed; the badges are a convenience and must not interrupt anything
+        counts.merge(fresh) { _, new in new }
+        countedIDs.formUnion(fresh.keys)
+        SourceCountsCache.save(counts, to: countsURL)
+        catalog.updateAutoHidden(counts: counts, keeping: selectedSourceIDs)
+        persistSources()
+        for rl in limits { record("Source counts (\(sources.count))", rl) }
     }
 
     /// Every five minutes while the app is frontmost: about 12 points an hour.
@@ -1200,10 +1287,9 @@ final class AppModel {
         do {
             try catalog.add(source)
             persistSources()
-            status = "Added \(repo.fullName) to Sources"
             Task { await loadMissingRepoInfo() }
             Task { await loadCounts() }
-        } catch { status = "\(repo.fullName) is already in Sources" }
+        } catch {}
     }
 
     func isSource(_ repo: RepoId) -> Bool { catalog.contains(repo.fullName) }
@@ -1279,7 +1365,7 @@ final class AppModel {
     func markNewSourcesSeen() { catalog.markAllSeen(); persistSources() }
 
     func resetSources() {
-        guard let viewer else { status = "Connect to GitHub first; sources cannot be reset yet"; return }
+        guard let viewer else { return }
         showAllSidebarItems()
         catalog = SourceCatalog.seeded(from: SourcesQuery.assemble(viewer: viewer, config: SourceConfig()))
         persistSources()
@@ -1345,24 +1431,21 @@ final class AppModel {
         guard let actions, let viewer else { return }
         // A PR with an action already running is skipped: a double click must not submit twice.
         let fresh = targets.filter { !busy.contains($0.id) }
-        guard !fresh.isEmpty else { if !targets.isEmpty { status = "Already working on that PR" }; return }
+        guard !fresh.isEmpty else { return }
         let options = ActionOptions(mergeMethod: mergeMethod)
         let infos = Dictionary(fresh.compactMap { pr in repoInfo(for: pr.repo).map { (pr.repo, $0) } }) { a, _ in a }
         let ids = fresh.map(\.id)
         busy.formUnion(ids)
+        let total = fresh.count
+        batchProgress = BatchProgress(done: 0, total: total)
         Task {
-            defer { busy.subtract(ids) }
-            guard await accountMatches() else { status = "Stopped: the GitHub account changed"; return }
-            status = fresh.count > 1 ? "Working... 0/\(fresh.count)" : "Working..."
-            let total = fresh.count
+            defer { busy.subtract(ids); batchProgress = nil }
+            guard await accountMatches() else { return }
             let summary = await BatchRunner.run(action, on: fresh, actions: actions, options: options, progress: { done in
-                Task { @MainActor in if self.busy.isSuperset(of: ids) { self.status = "Working... \(done)/\(total)" } }
+                Task { @MainActor in if self.busy.isSuperset(of: ids) { self.batchProgress = BatchProgress(done: done, total: total) } }
             }) { pr in
                 ActionContext(viewerLogin: viewer.login, repo: infos[pr.repo])
             }
-            status = fresh.count == 1
-                ? (summary.doneMessages.first ?? summary.queuedMessages.first ?? summary.skipped.first ?? summary.failed.first ?? "")
-                : summary.message
             if !summary.failed.isEmpty { error = summary.failed.joined(separator: "\n") }
             // Deselect what this batch handled; failures stay selected for a retry, and a selection made
             // elsewhere while it ran is not touched.
@@ -1384,15 +1467,12 @@ final class AppModel {
         guard !bots.isEmpty else { return }
         let ids = bots.map(\.id)
         busy.formUnion(ids)
+        batchProgress = BatchProgress(done: 0, total: bots.count)
         Task {
-            defer { busy.subtract(ids) }
-            guard await accountMatches() else { status = "Stopped: the GitHub account changed"; return }
-            status = "Sending @dependabot \(command)..."
+            defer { busy.subtract(ids); batchProgress = nil }
+            guard await accountMatches() else { return }
             let summary = await BatchRunner.comment(Dependabot.comment(command), on: bots, actions: actions)
-            if summary.failed.isEmpty {
-                status = "Sent @dependabot \(command) to \(summary.done.count) PR(s)"
-            } else {
-                status = "Sent @dependabot \(command) to \(summary.done.count) of \(bots.count) PR(s)"
+            if !summary.failed.isEmpty {
                 error = summary.failed.joined(separator: "\n")
                 selection.clear()
                 for id in summary.failedIDs { selection.toggle(id) }
@@ -1411,7 +1491,6 @@ final class AppModel {
     func copy(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
-        status = "Copied \(text)"
     }
 
     func open(_ prs: [PR]) {
@@ -1421,7 +1500,6 @@ final class AppModel {
     func copyURLs(_ prs: [PR]) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(prs.map(\.url).joined(separator: "\n"), forType: .string)
-        status = "Copied \(prs.count) URL(s)"
     }
 
     /// What a right-click menu acts on. By default only the PR that was clicked, even when it is one of several
