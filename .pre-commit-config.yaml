@@ -1,0 +1,21 @@
+exclude: ^Tests/.*/Fixtures/
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+      - id: check-yaml
+
+  - repo: local
+    hooks:
+      - id: swift-format
+        name: swift-format
+        entry: env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift format format -i --configuration .swift-format.json
+        language: system
+        files: \.swift$
