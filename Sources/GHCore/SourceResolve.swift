@@ -108,7 +108,7 @@ public extension SourcesQuery {
     private static func repositoryProfile(_ name: String, gh: any GhRunner) async throws -> SourceProfile {
         let info = try await repository(name, gh: gh)
         let source = Source.repo(info.fullName)
-        async let counts = try? SourceCountsQuery.fetch([source], client: GraphQLClient(gh: gh)).counts[source.id]
+        async let counts = SourceCountsQuery.fetch([source], client: GraphQLClient(gh: gh)).counts[source.id]
         var p = SourceProfile(source: source)
         p.bio = clean(info.description)
         p.website = clean(info.homepage)
@@ -141,7 +141,7 @@ public extension SourcesQuery {
         let isOrg = info.type == "Organization"
         let source: Source = isOrg ? .org(info.login) : .user(info.login)
 
-        async let counts = try? SourceCountsQuery.fetch([source], client: GraphQLClient(gh: gh)).counts[source.id]
+        async let counts = SourceCountsQuery.fetch([source], client: GraphQLClient(gh: gh)).counts[source.id]
         async let membership = isOrg ? organizationMembership(info.login, gh: gh) : .notApplicable
 
         var p = SourceProfile(source: source)

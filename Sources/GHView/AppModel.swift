@@ -1168,23 +1168,22 @@ final class AppModel {
 
     // MARK: Source counts
 
-    /// One GraphQL request for every source (1 point for dozens). Failures keep the last known numbers.
+    /// Several small, concurrent GraphQL requests (1 point each) rather than one big one, so a gateway hiccup on
+    /// a big catalog only misses a few sources' counts instead of failing the whole refresh. Whatever does not
+    /// come back this round keeps its last known number.
     func loadCounts() async {
         guard let client, !countsLoading else { return }
         let sources = catalog.allSources
         guard !sources.isEmpty else { return }
         countsLoading = true; defer { countsLoading = false }
-        do {
-            let (fresh, limits) = try await SourceCountsQuery.fetch(sources, client: client)
-            counts = fresh
-            countedIDs = Set(sources.map(\.id))
-            SourceCountsCache.save(fresh, to: countsURL)
-            catalog.updateAutoHidden(counts: fresh, keeping: selectedSourceIDs)
-            persistSources()
-            for rl in limits { record("Source counts (\(sources.count))", rl) }
-        } catch {
-            // keep what we have; the badges are a convenience and must not interrupt anything
-        }
+        let (fresh, limits) = await SourceCountsQuery.fetch(sources, client: client)
+        guard !fresh.isEmpty else { return } // every batch failed; the badges are a convenience and must not interrupt anything
+        counts.merge(fresh) { _, new in new }
+        countedIDs.formUnion(fresh.keys)
+        SourceCountsCache.save(counts, to: countsURL)
+        catalog.updateAutoHidden(counts: counts, keeping: selectedSourceIDs)
+        persistSources()
+        for rl in limits { record("Source counts (\(sources.count))", rl) }
     }
 
     /// Every five minutes while the app is frontmost: about 12 points an hour.

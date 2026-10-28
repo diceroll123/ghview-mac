@@ -17,8 +17,10 @@ public struct SourceCounts: Codable, Sendable, Equatable {
 }
 
 public enum SourceCountsQuery {
-    /// Sources per request. The cost is 1 point whatever the size (60 sources measured), so this only bounds query text.
-    static let batchSize = 50
+    /// Sources per request (so up to twice as many aliased searches). The rate-limit cost is 1 point whatever the
+    /// size, but GitHub's own gateway can 502 a request that packs in too many searches at once - kept small, and
+    /// batches run concurrently (see `fetch`), so a big catalog is still fast without risking that.
+    static let batchSize = 15
 
     /// Two aliased searches per source: `o<i>` for open PRs and `r<i>` for review requests.
     static func build(_ sources: [Source]) -> String {
@@ -64,18 +66,30 @@ public enum SourceCountsQuery {
         return result
     }
 
-    /// Fetches counts for every source. Sources whose search fails get `error` set instead of failing the batch.
-    public static func fetch(_ sources: [Source], client: GraphQLClient) async throws
+    /// Fetches counts for every source, one small batch of aliased searches at a time, all in flight together
+    /// (`GhRunner` bounds how many `gh` calls actually run at once). Sources whose own search fails get `error`
+    /// set instead of failing their batch; a batch that fails outright (a 502, say) is simply missing from the
+    /// result rather than failing every other batch too - the caller keeps last-known counts for those sources.
+    public static func fetch(_ sources: [Source], client: GraphQLClient) async
         -> (counts: [String: SourceCounts], rateLimits: [RateLimit]) {
+        let batches = stride(from: 0, to: sources.count, by: batchSize).map {
+            Array(sources[$0..<min($0 + batchSize, sources.count)])
+        }
         var all: [String: SourceCounts] = [:]
         var limits: [RateLimit] = []
-        var start = 0
-        while start < sources.count {
-            let batch = Array(sources[start..<min(start + batchSize, sources.count)])
-            let (response, errors): (Response, [GraphQLErrorInfo]) = try await client.queryAllowingErrors(build(batch))
-            all.merge(assemble(batch, response, errors: errors)) { $1 }
-            if let rl = response.rateLimit { limits.append(rl) }
-            start += batchSize
+        await withTaskGroup(of: (counts: [String: SourceCounts], rateLimit: RateLimit?)?.self) { group in
+            for batch in batches {
+                group.addTask {
+                    guard let (response, errors): (Response, [GraphQLErrorInfo]) =
+                        try? await client.queryAllowingErrors(build(batch)) else { return nil }
+                    return (assemble(batch, response, errors: errors), response.rateLimit)
+                }
+            }
+            for await result in group {
+                guard let result else { continue }
+                all.merge(result.counts) { $1 }
+                if let rl = result.rateLimit { limits.append(rl) }
+            }
         }
         return (all, limits)
     }
