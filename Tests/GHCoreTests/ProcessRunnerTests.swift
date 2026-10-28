@@ -114,6 +114,31 @@ private func waitFor(_ condition: () -> Bool, seconds: Double = 5) async -> Bool
     #expect(Date().timeIntervalSince(started) >= 0.5)
 }
 
+@Test func aTransientGatewayErrorIsRetriedAndSucceeds() async throws {
+    let flag = FileManager.default.temporaryDirectory.appendingPathComponent("flag-\(UUID().uuidString)")
+    let exe = try script("""
+    if [ ! -e \(flag.path) ]; then touch \(flag.path); echo "gh: Bad Gateway (HTTP 502)" >&2; exit 1; fi
+    echo ok
+    """)
+    let gh = try GhCLI(executable: exe, maxTransientRetries: 2, transientRetryDelay: .milliseconds(10))
+    let out = try await gh.run(["x"])
+    #expect(String(decoding: out, as: UTF8.self) == "ok\n")           // succeeded on retry, caller saw no error
+}
+
+@Test func transientRetriesGiveUpAfterTheLimit() async throws {
+    let exe = try script(#"echo "gh: Bad Gateway (HTTP 502)" >&2; exit 1"#)
+    let gh = try GhCLI(executable: exe, maxTransientRetries: 2, transientRetryDelay: .milliseconds(10))
+    await #expect(throws: GhError.self) { _ = try await gh.run(["x"]) }
+}
+
+@Test func aNonGatewayErrorIsNeverRetried() async throws {
+    let log = FileManager.default.temporaryDirectory.appendingPathComponent("log-\(UUID().uuidString)")
+    let exe = try script("echo run >> \(log.path)\necho \"gh: Not Found (HTTP 404)\" >&2\nexit 1")
+    let gh = try GhCLI(executable: exe, maxTransientRetries: 2, transientRetryDelay: .milliseconds(10))
+    await #expect(throws: GhError.self) { _ = try await gh.run(["x"]) }
+    #expect(try String(contentsOf: log, encoding: .utf8).split(separator: "\n").count == 1)   // ran exactly once
+}
+
 @Test func theSemaphoreGrantsSlotsInOrderAndReleasesThem() async throws {
     let sem = AsyncSemaphore(limit: 1)
     try await sem.acquire()
