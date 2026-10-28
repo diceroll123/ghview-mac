@@ -3,7 +3,17 @@ import GHCore
 
 @main
 struct GHViewApp: App {
+#if DEBUG
+    // Demo mode (debug builds only, see scripts/generate-screenshot.sh) gets its own throwaway defaults and
+    // cache file, so running it never touches - or is affected by - a real install's settings.
+    private static let isDemo = ProcessInfo.processInfo.environment["GHVIEW_DEMO_FIXTURES"] == "1"
+    @State private var model = AppModel(
+        defaults: isDemo ? UserDefaults(suiteName: "ghview-demo-\(UUID().uuidString)")! : .standard,
+        countsURL: isDemo ? FileManager.default.temporaryDirectory.appendingPathComponent("ghview-demo-\(UUID().uuidString).json")
+                          : SourceCountsCache.defaultURL)
+#else
     @State private var model = AppModel()
+#endif
 
     var body: some Scene {
         // One window, deliberately: navigation (sources, repo, selection, filters) lives in one shared model, so a
@@ -13,7 +23,12 @@ struct GHViewApp: App {
                 .environment(model)
                 .environment(AvatarStore.shared)
                 .frame(minWidth: 1000, minHeight: 600)
-                .task { await model.start() }
+                .task {
+                    #if DEBUG
+                    if Self.isDemo { model.startDemo(); return }
+                    #endif
+                    await model.start()
+                }
         }
         .defaultSize(width: 1500, height: 900)
         .commands {
@@ -29,7 +44,7 @@ struct GHViewApp: App {
         }
         .defaultSize(width: 900, height: 480)
         Settings {
-            SettingsView().environment(model)
+            SettingsView().environment(model).environment(AvatarStore.shared)
         }
     }
 }

@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Testing
+@testable import GHCore
 @testable import GHView
 
 /// Stand-in image bytes; the tests decode them with a closure that records which bytes an image came from.
@@ -18,12 +19,13 @@ private final class Net: @unchecked Sendable {
     var fail = false
     var shade: UInt8 = 10
     private(set) var policies: [URLRequest.CachePolicy] = []
+    private(set) var tokens: [String?] = []
     var networkCalls: Int { lock.withLock { policies.filter { $0 == .reloadRevalidatingCacheData }.count } }
-    private func record(_ policy: URLRequest.CachePolicy) -> (Bool, UInt8) {
-        lock.withLock { policies.append(policy); return (fail, shade) }
+    private func record(_ policy: URLRequest.CachePolicy, _ token: String?) -> (Bool, UInt8) {
+        lock.withLock { policies.append(policy); tokens.append(token); return (fail, shade) }
     }
-    func fetch(_ url: URL, _ policy: URLRequest.CachePolicy) async throws -> (Data, Int) {
-        let (failing, s) = record(policy)
+    func fetch(_ url: URL, _ policy: URLRequest.CachePolicy, _ token: String?) async throws -> (Data, Int) {
+        let (failing, s) = record(policy, token)
         if policy == .returnCacheDataDontLoad { throw URLError(.resourceUnavailable) }   // nothing on disk
         if failing { throw URLError(.notConnectedToInternet) }
         return (png(s), 200)
@@ -35,7 +37,7 @@ private let url = URL(string: "https://avatars.example/u/1")!
 @MainActor
 private func store(_ net: Net, _ clock: Clock, limit: Int = 500) -> AvatarStore {
     // Each decoded image remembers which bytes it came from, so tests can tell one avatar from another.
-    AvatarStore(fetch: { try await net.fetch($0, $1) }, now: { clock.date },
+    AvatarStore(fetch: { try await net.fetch($0, $1, $2) }, now: { clock.date },
                 decode: { data in
                     let image = NSImage(size: NSSize(width: 1, height: 1))
                     image.accessibilityDescription = String(data.hashValue)
@@ -96,7 +98,7 @@ private func store(_ net: Net, _ clock: Clock, limit: Int = 500) -> AvatarStore 
 @Test @MainActor func aCachedCopyIsShownAndThenRevalidated() async {
     let cached = png(50)
     let calls = LockedPolicies()
-    let s = AvatarStore(fetch: { _, policy in
+    let s = AvatarStore(fetch: { _, policy, _ in
         calls.add(policy)
         if policy == .returnCacheDataDontLoad { return (cached, 200) }
         return (png(90), 200)
@@ -134,4 +136,16 @@ private final class LockedPolicies: @unchecked Sendable {
     async let b: Void = s.load(url)
     _ = await (a, b)
     #expect(net.networkCalls == 1)
+}
+
+private struct TokenGh: GhRunner {
+    func run(_ args: [String], stdin: Data?, cwd: URL?) async throws -> Data { Data("sso-token-123\n".utf8) }
+}
+
+@Test @MainActor func configuredAuthAttachesTheGhTokenToRequests() async {
+    let net = Net(), clock = Clock()
+    let s = store(net, clock)
+    s.configureAuth(gh: TokenGh())
+    await s.load(url)
+    #expect(net.tokens == ["sso-token-123", "sso-token-123"])   // so an avatar behind SAML SSO loads like any other gh call
 }

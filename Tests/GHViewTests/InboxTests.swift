@@ -7,7 +7,7 @@ private struct Item {
     var author = "me"
     var draft = false
     var decision: String? = nil
-    var merge = "BLOCKED"
+    var merge = "MERGEABLE"
     var users: [String] = []
     var teams: [String] = []
 }
@@ -25,11 +25,12 @@ private func searchJSON(_ items: [Item], base: Int) throws -> Data {
         n["author"] = ["login": item.author]
         n["isDraft"] = item.draft
         n["reviewDecision"] = item.decision as Any? ?? NSNull()
-        n["mergeStateStatus"] = item.merge
+        n["mergeable"] = item.merge
         n["commits"] = ["nodes": [] as [Any]]                      // no checks at all
         var requests: [[String: Any]] = item.users.map { ["requestedReviewer": ["login": $0]] }
         requests += item.teams.map { ["requestedReviewer": ["slug": $0, "organization": ["login": "acme"]]] }
-        n["reviewRequests"] = ["totalCount": requests.count, "nodes": requests]
+        n["reviewRequests"] = ["totalCount": requests.count]
+        n["reviewRequestNodes"] = ["nodes": requests]
         return n
     }
     conn["pageInfo"] = ["hasNextPage": false, "endCursor": NSNull()]
@@ -42,9 +43,9 @@ private func searchJSON(_ items: [Item], base: Int) throws -> Data {
 private let mine: [Item] = [
     Item(draft: true),                                             // your drafts
     Item(decision: "CHANGES_REQUESTED"),                           // needs action
-    Item(decision: "APPROVED", merge: "CLEAN"),                    // ready to merge
+    Item(decision: "APPROVED", merge: "MERGEABLE"),                // ready to merge
     Item(decision: "REVIEW_REQUIRED"),                             // waiting
-    Item(decision: "APPROVED", merge: "DIRTY"),                    // needs action (conflict)
+    Item(decision: "APPROVED", merge: "CONFLICTING"),              // needs action (conflict)
 ]
 private let asked: [Item] = [
     Item(author: "alice", users: ["me"]),                          // needs your review

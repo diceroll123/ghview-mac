@@ -46,6 +46,24 @@ private func tag(_ pr: PR, _ sub: String = "close") -> String { "pr:\(sub):\(pr.
     #expect(model.busy.isEmpty)
 }
 
+@Test @MainActor func batchProgressTracksCompletionAndClearsWhenDone() async {
+    let gh = GatedGh { $0.hasPrefix("pr:") }
+    let model = await modelWithPRs(gh)
+    let (a, b) = (model.prs[0], model.prs[1])
+
+    model.perform(.close, on: [a, b], confirmed: true)
+    await gh.waitForRequest(tag(a)); await gh.waitForRequest(tag(b))
+    #expect(model.batchProgress == BatchProgress(done: 0, total: 2))
+
+    await gh.release(tag(a))
+    await settle()
+    #expect(model.batchProgress == BatchProgress(done: 1, total: 2))
+
+    await gh.release(tag(b))
+    await settle()
+    #expect(model.batchProgress == nil)
+}
+
 @Test @MainActor func failedTargetsStayAndASelectionMadeMeanwhileSurvives() async {
     let gh = GatedGh { $0.hasPrefix("pr:") }
     let model = await modelWithPRs(gh)

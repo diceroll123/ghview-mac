@@ -13,7 +13,7 @@ import Testing
 @Test func decodesRealCountsFixture() async throws {
     let data = try fixture("source_counts")
     let sources: [Source] = [.user("diceroll123"), .org("rneopets")]
-    let (counts, limits) = try await SourceCountsQuery.fetch(sources, client: GraphQLClient(gh: MockGh { _ in data }))
+    let (counts, limits) = await SourceCountsQuery.fetch(sources, client: GraphQLClient(gh: MockGh { _ in data }))
     #expect(counts["diceroll123"]?.open ?? 0 > 0)
     #expect(counts["rneopets"]?.open ?? 0 > 0)
     #expect(counts.values.allSatisfy { $0.error == nil })
@@ -28,21 +28,22 @@ import Testing
      "errors":[{"type":"FORBIDDEN","path":["o1"],"message":"Resource protected by organization SAML enforcement."}]}
     """#.utf8)
     let gh = MockGh { args in throw GhError(args: args, status: 1, stderr: "gh: Resource protected", stdout: body) }
-    let (counts, _) = try await SourceCountsQuery.fetch([.user("me"), .org("locked")], client: GraphQLClient(gh: gh))
+    let (counts, _) = await SourceCountsQuery.fetch([.user("me"), .org("locked")], client: GraphQLClient(gh: gh))
     #expect(counts["me"] == SourceCounts(open: 4, reviewRequested: 1, error: nil))
     #expect(counts["locked"]?.error?.contains("SAML") == true && counts["locked"]?.needsSSO == true)
     #expect(counts["locked"]?.open == 0)
 }
 
-@Test func failureWithoutDataStillThrows() async {
+/// A batch that fails outright (no data at all, e.g. a 502) is missing from the result rather than failing the
+/// whole fetch - the caller keeps whatever counts it already had for those sources.
+@Test func failureWithoutDataIsSkipped() async {
     let gh = MockGh { args in throw GhError(args: args, status: 1, stderr: "gh: network down") }
-    await #expect(throws: GhError.self) {
-        _ = try await SourceCountsQuery.fetch([.user("me")], client: GraphQLClient(gh: gh))
-    }
+    let (counts, _) = await SourceCountsQuery.fetch([.user("me")], client: GraphQLClient(gh: gh))
+    #expect(counts.isEmpty)
+
     let allErrors = MockGh { args in throw GhError(args: args, status: 1, stderr: "x", stdout: Data(#"{"errors":[{"message":"bad"}]}"#.utf8)) }
-    await #expect(throws: GhError.self) { // no data at all: the original error surfaces
-        _ = try await SourceCountsQuery.fetch([.user("me")], client: GraphQLClient(gh: allErrors))
-    }
+    let (counts2, _) = await SourceCountsQuery.fetch([.user("me")], client: GraphQLClient(gh: allErrors))
+    #expect(counts2.isEmpty)
 }
 
 @Test func realPartialResponseFixtureDecodes() async throws {
@@ -60,8 +61,8 @@ import Testing
     let sources = (0..<120).map { Source.org("org\($0)") }
     let calls = LockedBox<Int>(0)
     let gh = MockGh { _ in calls.update { $0 += 1 }; return Data(#"{"data":{"rateLimit":{"remaining":1,"limit":2,"cost":1,"resetAt":null}}}"#.utf8) }
-    let (counts, limits) = try await SourceCountsQuery.fetch(sources, client: GraphQLClient(gh: gh))
-    #expect(calls.get() == 3 && limits.count == 3)          // 50 + 50 + 20
+    let (counts, limits) = await SourceCountsQuery.fetch(sources, client: GraphQLClient(gh: gh))
+    #expect(calls.get() == 8 && limits.count == 8)          // 120 / 15, all concurrent
     #expect(counts.count == 120 && counts.values.allSatisfy { $0.open == 0 })
 }
 

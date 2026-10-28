@@ -9,8 +9,9 @@ public enum ReposQuery {
           pageInfo { hasNextPage endCursor }
           nodes {
             name owner { login } primaryLanguage { name } pushedAt stargazerCount
-            isArchived isPrivate viewerPermission autoMergeAllowed hasIssuesEnabled
+            isArchived isPrivate visibility viewerPermission autoMergeAllowed hasIssuesEnabled
             squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed isFork
+            latestRelease { tagName publishedAt }
             pullRequests(states: OPEN) { totalCount }
           }
         }
@@ -35,6 +36,7 @@ public enum ReposQuery {
             var stargazerCount: Int
             var isArchived: Bool
             var isPrivate: Bool
+            var visibility: String?
             var viewerPermission: String?
             var autoMergeAllowed: Bool
             var hasIssuesEnabled: Bool
@@ -42,11 +44,13 @@ public enum ReposQuery {
             var mergeCommitAllowed: Bool?
             var rebaseMergeAllowed: Bool?
             var isFork: Bool?
+            var latestRelease: Release?
             var pullRequests: Count
         }
         struct Login: Decodable, Sendable { var login: String }
         struct Lang: Decodable, Sendable { var name: String }
         struct Count: Decodable, Sendable { var totalCount: Int }
+        struct Release: Decodable, Sendable { var tagName: String; var publishedAt: Date? }
     }
 
     public struct Page: Sendable {
@@ -65,6 +69,7 @@ public enum ReposQuery {
             openPRs: n.pullRequests.totalCount,
             isArchived: n.isArchived,
             isPrivate: n.isPrivate,
+            visibility: RepoVisibility(graphQL: n.visibility),
             canPush: ["WRITE", "MAINTAIN", "ADMIN"].contains(n.viewerPermission ?? ""),
             allowAutoMerge: n.autoMergeAllowed,
             hasIssues: n.hasIssuesEnabled,
@@ -75,7 +80,9 @@ public enum ReposQuery {
                 case .merge: n.mergeCommitAllowed ?? true
                 case .rebase: n.rebaseMergeAllowed ?? true
                 }
-            }
+            },
+            releaseTag: n.latestRelease?.tagName,
+            releaseDate: n.latestRelease?.publishedAt
         )
     }
 
@@ -90,8 +97,9 @@ public enum ReposQuery {
 
     static let infoFields = """
     name owner { login } primaryLanguage { name } pushedAt stargazerCount
-    isArchived isPrivate viewerPermission autoMergeAllowed hasIssuesEnabled
+    isArchived isPrivate visibility viewerPermission autoMergeAllowed hasIssuesEnabled
             squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed isFork
+    latestRelease { tagName publishedAt }
     pullRequests(states: OPEN) { totalCount }
     """
 

@@ -60,6 +60,7 @@ public struct SourceConfig: Sendable, Equatable {
 public struct Viewer: Sendable, Equatable {
     public var login: String
     public var orgs: [String]
+    public init(login: String, orgs: [String]) { self.login = login; self.orgs = orgs }
 }
 
 public enum SourcesQuery {

@@ -112,9 +112,15 @@ public struct GhCLI: GhRunner {
     public let limiter: AsyncSemaphore
     /// How long new commands are held back after GitHub reports a rate limit.
     public let rateLimitBackoff: Duration
+    /// How many times a transient gateway error (502/503/504 - GitHub's own infrastructure, not our request)
+    /// is retried before giving up.
+    public let maxTransientRetries: Int
+    /// How long to wait before the first retry; each one after that waits twice as long.
+    public let transientRetryDelay: Duration
 
     public init(executable: URL? = nil, timeout: Duration = .seconds(120), maxConcurrent: Int = 8,
-                rateLimitBackoff: Duration = .seconds(30)) throws {
+                rateLimitBackoff: Duration = .seconds(30), maxTransientRetries: Int = 2,
+                transientRetryDelay: Duration = .seconds(1)) throws {
         if let executable {
             self.executable = executable
         } else if let found = GhCLI.locate() {
@@ -125,6 +131,8 @@ public struct GhCLI: GhRunner {
         self.timeout = timeout
         self.limiter = AsyncSemaphore(limit: maxConcurrent)
         self.rateLimitBackoff = rateLimitBackoff
+        self.maxTransientRetries = maxTransientRetries
+        self.transientRetryDelay = transientRetryDelay
         signal(SIGPIPE, SIG_IGN) // a child that exits without reading stdin must not take the app down
     }
 
@@ -144,16 +152,30 @@ public struct GhCLI: GhRunner {
         return s.contains("secondary rate limit") || s.contains("rate limit exceeded") || s.contains("abuse detection")
     }
 
+    /// `gh` reports an HTTP error as `"gh: <message> (HTTP <code>)"`. 502/503/504 are GitHub's own gateway or
+    /// backend failing to answer in time, not a problem with the request - a broad or slow query is more likely
+    /// to be hit by one (GitHub's edge gives up before the request finishes), but retrying it plain often
+    /// succeeds since nothing about the request itself was wrong.
+    static func isTransientServerError(_ stderr: String) -> Bool {
+        ["(HTTP 502)", "(HTTP 503)", "(HTTP 504)"].contains { stderr.contains($0) }
+    }
+
     public func run(_ args: [String], stdin: Data?, cwd: URL?) async throws -> Data {
-        try await limiter.acquire()
-        do {
-            let data = try await execute(args, stdin: stdin, cwd: cwd)
-            await limiter.release()
-            return data
-        } catch {
-            await limiter.release()
-            if let err = error as? GhError, Self.isRateLimit(err.stderr) { await limiter.backoff(for: rateLimitBackoff) }
-            throw error
+        var attempt = 0
+        while true {
+            try await limiter.acquire()
+            do {
+                let data = try await execute(args, stdin: stdin, cwd: cwd)
+                await limiter.release()
+                return data
+            } catch {
+                await limiter.release()
+                guard let err = error as? GhError else { throw error }
+                if Self.isRateLimit(err.stderr) { await limiter.backoff(for: rateLimitBackoff) }
+                guard Self.isTransientServerError(err.stderr), attempt < maxTransientRetries else { throw error }
+                attempt += 1
+                try await Task.sleep(for: transientRetryDelay * Double(attempt))
+            }
         }
     }
 

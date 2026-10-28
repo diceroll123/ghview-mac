@@ -4,19 +4,21 @@ import GHCore
 struct PRListView: View {
     @Environment(AppModel.self) private var model
     @State private var hovered: PrId?
+    /// Shared by every row's separator, so the table's inset is measured once per list, not once per row.
+    @State private var rowMargin: CGFloat = PRRowSeparator.defaultMargin
 
     var body: some View {
         @Bindable var model = model
         List(selection: $model.focused) {
-                ForEach(model.visiblePRs) { pr in
+                ForEach(Array(model.visiblePRs.enumerated()), id: \.element.id) { index, pr in
                     PRRow(pr: pr, hovered: hovered == pr.id)
-                        .prRowSeparator()
+                        .prRowSeparator(margin: $rowMargin, measures: index == 0)
                         .tag(pr.id)
                         .onHover { hovered = $0 ? pr.id : (hovered == pr.id ? nil : hovered) }
                         .contextMenu { PRActionsMenu(targets: model.contextTargets(for: pr)) }
                 }
                 if model.prsLoading && !model.hasLoadedPRs {
-                    ForEach(0..<6, id: \.self) { SkeletonRow(index: $0).prRowSeparator() }
+                    ForEach(0..<6, id: \.self) { SkeletonRow(index: $0).prRowSeparator(margin: $rowMargin, measures: $0 == 0 && model.visiblePRs.isEmpty) }
                 }
                 if model.hasMorePRs {
                     HStack {
@@ -51,6 +53,13 @@ struct PRListView: View {
                     EmptyView()
                 }
             }
+            .overlay(alignment: .bottom) {
+                if let progress = model.batchProgress {
+                    BatchProgressHUD(progress: progress).padding(.bottom, 14)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: model.batchProgress)
             .onKeyPress(.space) {
                 if let id = model.focused { model.selection.toggle(id); return .handled }
                 return .ignored
@@ -68,12 +77,6 @@ struct PRListView: View {
                     if model.selection.isSelectionMode { SelectionBar() }
                 }
                 .solidBarBackground()
-            }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if let status = model.status {
-                    Text(status).font(.caption).foregroundStyle(.secondary).padding(4)
-                        .frame(maxWidth: .infinity).solidBarBackground(dividerAt: .top)
-                }
             }
     }
 }
@@ -112,7 +115,10 @@ struct PRRow: View {
                     Text(pr.title).lineLimit(2).fontWeight(.medium)
                     if pr.isDraft { Text("Draft").font(.caption2).padding(.horizontal, 4).background(.quaternary, in: Capsule()) }
                 }
-                HStack(spacing: 6) {
+                // A plain HStack squished these onto one line and clipped or overlapped when the row was
+                // narrow (e.g. the PR list beside the repo browser); wrapping to a second line instead keeps
+                // everything legible at any width.
+                FlowLayout(spacing: 6) {
                     Text(verbatim: model.label(for: pr))
                         .font(.caption.monospaced()).foregroundStyle(.secondary)
                     RepoFlags(repo: model.repoInfo(for: pr.repo), showsPrivate: false, showsFork: false)
@@ -146,14 +152,20 @@ struct PRRow: View {
 struct PRRowSeparator: ViewModifier {
     @Environment(\.displayScale) private var displayScale
     /// The table's inset as measured on this machine and window; `defaultMargin` until a measurement is available.
-    @State private var margin: CGFloat = PRRowSeparator.defaultMargin
+    /// Shared across every row (bound from `PRListView`) so only one row ever measures it - remeasuring it from
+    /// every row as each one first appeared caused each of them to shift a frame late while scrolling.
+    @Binding var margin: CGFloat
+    /// Only one row per list needs to probe the table; the rest just draw with whatever it found.
+    var measures: Bool = false
 
     func body(content: Content) -> some View {
         content
             // A row sizes to its contents, so without this the line below would only be as wide as the title.
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 6) // the table's own 4pt inset plus the row's 2pt, so the row keeps its height
-            .background(GeometryReader { geo in TableMarginProbe(cellWidth: geo.size.width, margin: $margin) })
+            .background {
+                if measures { GeometryReader { geo in TableMarginProbe(cellWidth: geo.size.width, margin: $margin) } }
+            }
             .overlay(alignment: .bottom) {
                 Rectangle()
                     .fill(Color(nsColor: .separatorColor))
@@ -196,7 +208,9 @@ private struct TableMarginProbe: NSViewRepresentable {
 }
 
 extension View {
-    func prRowSeparator() -> some View { modifier(PRRowSeparator()) }
+    func prRowSeparator(margin: Binding<CGFloat>, measures: Bool = false) -> some View {
+        modifier(PRRowSeparator(margin: margin, measures: measures))
+    }
 }
 
 /// Filters and sorts work on the PRs loaded so far; this says so and offers the complete view.
@@ -527,5 +541,53 @@ struct FilterPopover: View {
         }
         .padding(14)
         .frame(width: 300, height: 460)
+    }
+}
+
+/// A compact version of `ChecksBar`'s look for a running batch action: green for what has finished, the same
+/// amber striped tail for what has not.
+struct BatchProgressBar: View {
+    let progress: BatchProgress
+    var height: CGFloat = 6
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
+            Canvas { gc, size in
+                let fraction = progress.total > 0 ? Double(progress.done) / Double(progress.total) : 0
+                let doneWidth = size.width * fraction
+                let phase = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
+                gc.clip(to: Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: size.height / 2))
+                if doneWidth > 0 {
+                    gc.fill(Path(CGRect(x: 0, y: 0, width: doneWidth, height: size.height)), with: .color(CheckCounts.Kind.passed.color))
+                }
+                let remaining = CGRect(x: doneWidth, y: 0, width: size.width - doneWidth, height: size.height)
+                gc.fill(Path(remaining), with: .color(CheckCounts.Kind.pending.color.opacity(0.3)))
+                gc.drawLayer { layer in
+                    layer.clip(to: Path(remaining))
+                    ChecksBar.stripes(in: remaining, phase: phase, into: &layer)
+                }
+            }
+        }
+        .frame(height: height)
+    }
+}
+
+/// Floats over the bottom of the list while a batch action (merge, close, a dependabot command, ...) is
+/// running, instead of pushing the list's content up like a fixed status bar would.
+struct BatchProgressHUD: View {
+    let progress: BatchProgress
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(progress.total > 1 ? "Working... \(progress.done)/\(progress.total)" : "Working...")
+                .font(.caption).foregroundStyle(.secondary)
+            BatchProgressBar(progress: progress).frame(width: 160)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(.bar, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(.separator))
+        .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
     }
 }

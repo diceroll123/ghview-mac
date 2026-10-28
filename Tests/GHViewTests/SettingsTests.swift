@@ -24,6 +24,45 @@ private func defaults() -> UserDefaults { UserDefaults(suiteName: "settings-\(UU
     #expect(AppSettings(defaults: d).contextMenuScope == .clickedOnly)
 }
 
+@Test @MainActor func repoSubtitleEntriesDefaultToLanguageAndLockOnlyAndPersistReordering() {
+    let d = defaults()
+    let s = AppSettings(defaults: d)
+    #expect(s.repoSubtitleEntries.enabled() == [.language, .lockIcon])
+
+    let first = s.repoSubtitleEntries.removeFirst()
+    s.repoSubtitleEntries.append(first)                                   // reorder, as dragging a row would
+    s.repoSubtitleEntries[s.repoSubtitleEntries.firstIndex { $0.item == .releaseTag }!].enabled = true
+    let order: [RepoSubtitleItem] = s.repoSubtitleEntries.map(\.item)
+
+    let again = AppSettings(defaults: d)
+    #expect(again.repoSubtitleEntries.map(\.item) == order)
+    #expect(again.repoSubtitleEntries.enabled().contains(.releaseTag))
+}
+
+@Test @MainActor func sourceBadgeEntriesDefaultToReviewAndOpenCountsAndPersist() {
+    let d = defaults()
+    let s = AppSettings(defaults: d)
+    #expect(s.sourceBadgeEntries.enabled() == [.reviewRequested, .openPRs])
+
+    s.sourceBadgeEntries[s.sourceBadgeEntries.firstIndex { $0.item == .repoCount }!].enabled = true
+    let again = AppSettings(defaults: d)
+    #expect(again.sourceBadgeEntries.enabled() == [.reviewRequested, .openPRs, .repoCount])
+}
+
+@Test @MainActor func sourceBadgeColorsDefaultMatchTheOldLookAndPersist() {
+    let d = defaults()
+    let s = AppSettings(defaults: d)
+    #expect(s.sourceBadgeEntries.first { $0.item == .reviewRequested }?.color == .accent)
+    #expect(s.sourceBadgeEntries.first { $0.item == .openPRs }?.color == .plain)
+    #expect(s.sourceBadgeEntries.first { $0.item == .repoCount }?.color == .plain)
+
+    s.sourceBadgeEntries[s.sourceBadgeEntries.firstIndex { $0.item == .openPRs }!].color = .green
+    let again = AppSettings(defaults: d)
+    #expect(again.sourceBadgeEntries.first { $0.item == .openPRs }?.color == .green)
+    #expect(again.sourceBadgeEntries.first { $0.item == .reviewRequested }?.color == .accent)
+}
+
+
 @MainActor
 private func modelWithPRs() async -> AppModel {
     let gh = GatedGh(gate: { _ in false })
@@ -120,12 +159,12 @@ private func archivedOverride() -> @Sendable ([String]) -> Data? {
 
     m.destination = .sources(["me"])
     m.addRepoSource(repo)
-    #expect(m.isSource(repo) && m.status == "Added acme/api to Sources")
+    #expect(m.isSource(repo))
     #expect(m.destination == .sources(["me"]))                      // adding from a menu does not navigate away
     #expect(m.catalog.groups.last?.name == "Repositories")
 
-    m.addRepoSource(repo)
-    #expect(m.status == "acme/api is already in Sources" && m.catalog.allSources.filter { $0 == .repo("acme/api") }.count == 1)
+    m.addRepoSource(repo)                                           // adding it again is a harmless no-op
+    #expect(m.catalog.allSources.filter { $0 == .repo("acme/api") }.count == 1)
 }
 
 @Test @MainActor func aRepoSourceLoadsItsPRsThroughARepoSearchAndNeverListsRepos() async {

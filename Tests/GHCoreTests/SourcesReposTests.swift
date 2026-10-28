@@ -18,6 +18,42 @@ import Testing
     #expect(repo.canPush)
 }
 
+@Test func internalVisibilityIsDistinctFromPlainPrivate() async throws {
+    let json = #"""
+    {"data":{"rateLimit":{"remaining":1,"limit":2,"cost":1,"resetAt":null},
+    "repositoryOwner":{"repositories":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[
+    {"name":"internal-repo","owner":{"login":"acme"},"primaryLanguage":null,"pushedAt":null,"stargazerCount":0,
+     "isArchived":false,"isPrivate":true,"visibility":"INTERNAL","viewerPermission":"ADMIN",
+     "autoMergeAllowed":false,"hasIssuesEnabled":true,"pullRequests":{"totalCount":0}},
+    {"name":"private-repo","owner":{"login":"acme"},"primaryLanguage":null,"pushedAt":null,"stargazerCount":0,
+     "isArchived":false,"isPrivate":true,"visibility":"PRIVATE","viewerPermission":"ADMIN",
+     "autoMergeAllowed":false,"hasIssuesEnabled":true,"pullRequests":{"totalCount":0}}
+    ]}}}}
+    """#
+    let page = try await ReposQuery.fetch(owner: "acme", client: GraphQLClient(gh: MockGh { _ in Data(json.utf8) }))
+    #expect(page.repos.first { $0.id.name == "internal-repo" }?.visibility == .internal)
+    #expect(page.repos.first { $0.id.name == "private-repo" }?.visibility == .private)
+}
+
+@Test func latestReleaseTagAndDateAreMappedWhenPresent() async throws {
+    let json = #"""
+    {"data":{"rateLimit":{"remaining":1,"limit":2,"cost":1,"resetAt":null},
+    "repositoryOwner":{"repositories":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[
+    {"name":"released","owner":{"login":"acme"},"primaryLanguage":null,"pushedAt":null,"stargazerCount":0,
+     "isArchived":false,"isPrivate":false,"viewerPermission":"ADMIN","autoMergeAllowed":false,"hasIssuesEnabled":true,
+     "latestRelease":{"tagName":"v1.2.3","publishedAt":"2026-01-02T03:04:05Z"},"pullRequests":{"totalCount":0}},
+    {"name":"unreleased","owner":{"login":"acme"},"primaryLanguage":null,"pushedAt":null,"stargazerCount":0,
+     "isArchived":false,"isPrivate":false,"viewerPermission":"ADMIN","autoMergeAllowed":false,"hasIssuesEnabled":true,
+     "latestRelease":null,"pullRequests":{"totalCount":0}}
+    ]}}}}
+    """#
+    let page = try await ReposQuery.fetch(owner: "acme", client: GraphQLClient(gh: MockGh { _ in Data(json.utf8) }))
+    let released = try #require(page.repos.first { $0.id.name == "released" })
+    #expect(released.releaseTag == "v1.2.3")
+    #expect(released.releaseDate != nil)
+    #expect(page.repos.first { $0.id.name == "unreleased" }?.releaseTag == nil)
+}
+
 @Test func assemblesSources() {
     let viewer = Viewer(login: "me", orgs: ["zeta", "Alpha", "ME"])
     var cfg = SourceConfig()

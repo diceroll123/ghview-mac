@@ -35,18 +35,31 @@ public enum ReviewStatus: String, Sendable, Codable {
     }
 }
 
-public enum MergeableState: String, Sendable, Codable {
-    case clean, behind, dirty, blocked, unstable, hasHooks, draft, unknown
+/// GitHub's repository visibility: public, fully private, or "internal" (visible to everyone in an Enterprise
+/// account, but not outside it). Internal repos set `isPrivate` too, so the enum is needed to tell them apart.
+public enum RepoVisibility: String, Sendable, Codable {
+    case `public`, `private`, `internal`
 
     init(graphQL value: String?) {
         switch value {
-        case "CLEAN": self = .clean
-        case "BEHIND": self = .behind
-        case "DIRTY": self = .dirty
-        case "BLOCKED": self = .blocked
-        case "UNSTABLE": self = .unstable
-        case "HAS_HOOKS": self = .hasHooks
-        case "DRAFT": self = .draft
+        case "PRIVATE": self = .private
+        case "INTERNAL": self = .internal
+        default: self = .public
+        }
+    }
+}
+
+public enum MergeableState: String, Sendable, Codable {
+    case clean, behind, dirty, blocked, unstable, hasHooks, draft, unknown
+
+    /// From GitHub's coarse `mergeable` field (MERGEABLE/CONFLICTING/UNKNOWN). The full breakdown
+    /// (`mergeStateStatus`, with BEHIND/BLOCKED/UNSTABLE/HAS_HOOKS/DRAFT) requires GitHub to actually compute
+    /// mergeability, which is too expensive to ask for on every PR in a list; this only ever distinguishes an
+    /// actual conflict from "nothing to flag yet".
+    init(graphQL value: String?) {
+        switch value {
+        case "CONFLICTING": self = .dirty
+        case "MERGEABLE": self = .clean
         default: self = .unknown
         }
     }
@@ -110,6 +123,22 @@ public struct PR: Hashable, Sendable, Codable, Identifiable {
     public var labelTotal: Int?
     public var reviewRequestTotal: Int?
 
+    public init(id: PrId, title: String, author: String, isDraft: Bool, isOpen: Bool, createdAt: Date, updatedAt: Date,
+                url: String, headRef: String, baseRef: String, headSha: String, additions: Int, deletions: Int,
+                comments: Int, autoMerge: Bool, reviewStatus: ReviewStatus, viewerApproved: Bool, mergeable: MergeableState,
+                requestedReviewers: [String] = [], labels: [PRLabel] = [], checks: [CheckRun] = [],
+                checkSummary: CheckStatus, checkCounts: CheckCounts = CheckCounts(), requestedTeams: [ReviewTeam] = [],
+                labelTotal: Int? = nil, reviewRequestTotal: Int? = nil) {
+        self.id = id; self.title = title; self.author = author; self.isDraft = isDraft; self.isOpen = isOpen
+        self.createdAt = createdAt; self.updatedAt = updatedAt; self.url = url
+        self.headRef = headRef; self.baseRef = baseRef; self.headSha = headSha
+        self.additions = additions; self.deletions = deletions; self.comments = comments
+        self.autoMerge = autoMerge; self.reviewStatus = reviewStatus; self.viewerApproved = viewerApproved
+        self.mergeable = mergeable; self.requestedReviewers = requestedReviewers; self.labels = labels
+        self.checks = checks; self.checkSummary = checkSummary; self.checkCounts = checkCounts
+        self.requestedTeams = requestedTeams; self.labelTotal = labelTotal; self.reviewRequestTotal = reviewRequestTotal
+    }
+
     public var labelsTruncated: Bool { (labelTotal ?? labels.count) > labels.count }
     public var reviewersTruncated: Bool {
         let loaded = requestedReviewers.count + requestedTeams.count
@@ -142,6 +171,8 @@ public struct RepoInfo: Hashable, Sendable, Codable, Identifiable {
     public var openPRs: Int
     public var isArchived: Bool
     public var isPrivate: Bool
+    /// Public, fully private, or GitHub Enterprise "internal" (`isPrivate` is also true for internal repos).
+    public var visibility: RepoVisibility = .public
     public var canPush: Bool
     public var allowAutoMerge: Bool
     public var hasIssues: Bool
@@ -149,4 +180,17 @@ public struct RepoInfo: Hashable, Sendable, Codable, Identifiable {
     public var isFork: Bool = false
     /// Strategies the repository's settings permit. GitHub rejects a merge made any other way.
     public var allowedMergeMethods: [MergeMethod] = MergeMethod.allCases
+    /// The latest release's tag and publish date, if the repository has ever published one.
+    public var releaseTag: String? = nil
+    public var releaseDate: Date? = nil
+
+    public init(id: RepoId, language: String? = nil, pushedAt: Date? = nil, stars: Int = 0, openPRs: Int = 0,
+                isArchived: Bool = false, isPrivate: Bool = false, visibility: RepoVisibility = .public,
+                canPush: Bool = true, allowAutoMerge: Bool = true, hasIssues: Bool = true, isFork: Bool = false,
+                allowedMergeMethods: [MergeMethod] = MergeMethod.allCases, releaseTag: String? = nil, releaseDate: Date? = nil) {
+        self.id = id; self.language = language; self.pushedAt = pushedAt; self.stars = stars; self.openPRs = openPRs
+        self.isArchived = isArchived; self.isPrivate = isPrivate; self.visibility = visibility
+        self.canPush = canPush; self.allowAutoMerge = allowAutoMerge; self.hasIssues = hasIssues; self.isFork = isFork
+        self.allowedMergeMethods = allowedMergeMethods; self.releaseTag = releaseTag; self.releaseDate = releaseDate
+    }
 }
