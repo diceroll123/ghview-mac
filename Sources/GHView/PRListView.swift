@@ -279,7 +279,7 @@ struct SelectionBar: View {
                     }.controlSize(.small)
                 }
                 Spacer()
-                Button("Clear") { model.selection.clear() }.controlSize(.small)
+                Button("Clear") { model.selection.clear() }.controlSize(.small).help("Clear selection (Esc)")
             }
             ActionBar(targets: targets).frame(maxWidth: .infinity, alignment: .leading)
         }

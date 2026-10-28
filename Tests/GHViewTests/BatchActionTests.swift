@@ -64,7 +64,7 @@ private func tag(_ pr: PR, _ sub: String = "close") -> String { "pr:\(sub):\(pr.
     #expect(model.batchProgress == nil)
 }
 
-@Test @MainActor func failedTargetsStayAndASelectionMadeMeanwhileSurvives() async {
+@Test @MainActor func aSelectionMadeWhileABatchRunsSurvivesIt() async {
     let gh = GatedGh { $0.hasPrefix("pr:") }
     let model = await modelWithPRs(gh)
     let (a, b, c) = (model.prs[0], model.prs[1], model.prs[2])
@@ -82,7 +82,7 @@ private func tag(_ pr: PR, _ sub: String = "close") -> String { "pr:\(sub):\(pr.
     #expect(model.selection.selected == [c.id])     // untouched by the finished batch
 }
 
-@Test @MainActor func failedTargetsRemainSelectedForARetry() async {
+@Test @MainActor func everyTargetStaysSelectedAfterABatchWhetherOrNotItFailed() async {
     let gh = GatedGh { $0.hasPrefix("pr:") }
     let model = await modelWithPRs(gh)
     let (a, b) = (model.prs[0], model.prs[1])
@@ -92,7 +92,24 @@ private func tag(_ pr: PR, _ sub: String = "close") -> String { "pr:\(sub):\(pr.
     await gh.waitForRequest(tag(a)); await gh.waitForRequest(tag(b))
     await gh.release(tag(a)); await gh.release(tag(b), fail: true)
     await settle()
-    #expect(model.selection.selected == [b.id])
+    #expect(model.selection.selected == [a.id, b.id])
+}
+
+@Test @MainActor func aFinishedActionDoesNotReloadTheList() async {
+    let gh = GatedGh { $0.hasPrefix("pr:") }
+    let model = await modelWithPRs(gh)
+    let (a, b) = (model.prs[0], model.prs[1])
+    model.selection.toggle(a.id); model.selection.toggle(b.id)
+    await settle()   // let the initial load finish its follow-up requests
+    let before = await gh.requests().filter { !$0.hasPrefix("pr:") }
+
+    model.perform(.close, on: [a, b], confirmed: true)
+    await gh.waitForRequest(tag(a)); await gh.waitForRequest(tag(b))
+    await gh.release(tag(a)); await gh.release(tag(b))
+    await settle()
+    #expect(model.busy.isEmpty)
+    #expect(model.selection.selected == [a.id, b.id])
+    #expect(await gh.requests().filter { !$0.hasPrefix("pr:") } == before)
 }
 
 @Test @MainActor func bulkMergeAndCloseAskForConfirmationListingTheTargets() async {

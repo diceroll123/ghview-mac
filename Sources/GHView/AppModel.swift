@@ -1446,11 +1446,8 @@ final class AppModel {
             }) { pr in
                 ActionContext(viewerLogin: viewer.login, repo: infos[pr.repo])
             }
+            // The selection and the list are left as they are: the user clears the selection and refreshes.
             if !summary.failed.isEmpty { error = summary.failed.joined(separator: "\n") }
-            // Deselect what this batch handled; failures stay selected for a retry, and a selection made
-            // elsewhere while it ran is not touched.
-            selection.deselect(ids.filter { !summary.failedIDs.contains($0) })
-            refresh() // PR state, and the repo and source counts that the action changed
         }
     }
 
@@ -1460,7 +1457,7 @@ final class AppModel {
         perform(pending.action, on: pending.targets, confirmed: true)
     }
 
-    /// Sends a `@dependabot` command to each Dependabot PR. Failures are reported and stay selected for a retry.
+    /// Sends a `@dependabot` command to each Dependabot PR. Failures are reported; the selection is left as it is.
     func dependabot(_ command: String, on targets: [PR]) {
         guard let actions else { return }
         let bots = targets.filter(\.isDependabot).filter { !busy.contains($0.id) }
@@ -1472,11 +1469,7 @@ final class AppModel {
             defer { busy.subtract(ids); batchProgress = nil }
             guard await accountMatches() else { return }
             let summary = await BatchRunner.comment(Dependabot.comment(command), on: bots, actions: actions)
-            if !summary.failed.isEmpty {
-                error = summary.failed.joined(separator: "\n")
-                selection.clear()
-                for id in summary.failedIDs { selection.toggle(id) }
-            }
+            if !summary.failed.isEmpty { error = summary.failed.joined(separator: "\n") }
         }
     }
 
