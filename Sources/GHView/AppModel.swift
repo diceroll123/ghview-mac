@@ -929,12 +929,12 @@ final class AppModel {
                     for rl in limits { record(label, rl) }
                     if reloadCount > 0 { reconcileWithLoaded() }
                 } else if let repo {
-                    var page = try await PullRequestQuery.fetchRepo(repo, first: 30, after: cursor, client: client)
+                    var page = try await PullRequestQuery.fetchRepo(repo, after: cursor, client: client)
                     var loaded = page.prs
                     var limits = [page.rateLimit]
                     var extra = 0
                     while loaded.count < reloadCount, page.hasNextPage, extra < Self.maxRefreshPages, !Task.isCancelled {
-                        page = try await PullRequestQuery.fetchRepo(repo, first: 30, after: page.endCursor, client: client)
+                        page = try await PullRequestQuery.fetchRepo(repo, after: page.endCursor, client: client)
                         loaded += page.prs
                         limits.append(page.rateLimit)
                         extra += 1

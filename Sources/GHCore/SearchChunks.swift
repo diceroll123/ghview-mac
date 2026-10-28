@@ -128,7 +128,7 @@ public enum CombinedPRs {
     /// A chunk that fails is recorded on the pager and keeps its place for a retry while the others still
     /// deliver; the call throws only when every chunk it tried failed. `onlyFailed` retries just those, and
     /// `skipFailed` leaves them alone so a caller paging to the end does not hammer a broken source.
-    public static func fetchNext(_ pager: CombinedPager, existing: [PR], first: Int = 30, onlyFailed: Bool = false,
+    public static func fetchNext(_ pager: CombinedPager, existing: [PR], first: Int = PullRequestQuery.defaultPageSize, onlyFailed: Bool = false,
                                  skipFailed: Bool = false, needsReviewers: Bool = false, client: GraphQLClient) async throws -> Result {
         var pager = pager
         var queue = pager.pending.filter {

@@ -268,9 +268,15 @@ public enum PullRequestQuery {
     /// Everything in a PR search query except the scope, so chunking can budget the remaining length.
     public static let searchPrefix = "is:pr is:open sort:created-desc "
 
+    /// GitHub's own response time for a page scales with its size - measured roughly linearly, and for `search`
+    /// (every destination except a single repo) steeply enough that 30 on a big, busy scope (a large org, or an
+    /// account with a lot of open PRs) regularly ran past what GitHub's gateway will wait for and came back as a
+    /// 502. Smaller pages trade more "Load more" clicks for actually finishing.
+    public static let defaultPageSize = 15
+
     // MARK: API
 
-    public static func fetchRepo(_ repo: RepoId, first: Int = 30, after: String? = nil, needsReviewers: Bool = false,
+    public static func fetchRepo(_ repo: RepoId, first: Int = defaultPageSize, after: String? = nil, needsReviewers: Bool = false,
                                  client: GraphQLClient) async throws -> Page {
         let r: RepoResponse = try await client.query(repoPRs, variables: [
             "owner": repo.owner, "name": repo.name, "first": first, "after": after, "needsReviewers": needsReviewers,
@@ -282,7 +288,7 @@ public enum PullRequestQuery {
     /// `scope` is e.g. "org:acme" or "author:octocat". `needsReviewers` fetches each PR's actual requested
     /// reviewers, not just the count - only the inbox's review-requested search needs it, to tell a direct
     /// request from a team one; everything else gets that lazily when a PR's detail view opens.
-    public static func fetchSearch(scope: String, first: Int = 30, after: String? = nil, needsReviewers: Bool = false,
+    public static func fetchSearch(scope: String, first: Int = defaultPageSize, after: String? = nil, needsReviewers: Bool = false,
                                    client: GraphQLClient) async throws -> Page {
         let r: SearchResponse = try await client.query(searchPRs, variables: [
             "q": searchPrefix + scope, "first": first, "after": after, "needsReviewers": needsReviewers,
