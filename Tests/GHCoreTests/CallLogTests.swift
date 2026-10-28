@@ -9,8 +9,10 @@ private func logged(_ log: GhCallLog, _ respond: @escaping @Sendable ([String]) 
 @Test func recordsSuccessWithSummary() async throws {
     let log = GhCallLog()
     let gh = logged(log) { _ in Data("{}".utf8) }
-    _ = try await gh.run(["api", "graphql", "-f", "query=query($q: String!) { rateLimit { cost } search(query: $q) { issueCount } }",
-                          "-f", "q=is:pr is:open org:acme", "-F", "first=30"])
+    _ = try await gh.run([
+        "api", "graphql", "-f", "query=query($q: String!) { rateLimit { cost } search(query: $q) { issueCount } }",
+        "-f", "q=is:pr is:open org:acme", "-F", "first=30",
+    ])
     let call = try #require(log.entries.first)
     #expect(call.outcome == .ok)
     #expect(call.bytes == 2)

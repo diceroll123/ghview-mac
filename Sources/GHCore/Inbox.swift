@@ -69,7 +69,10 @@ public enum InboxSection: String, CaseIterable, Codable, Sendable, Identifiable 
         if pr.author.lowercased() == me {
             if pr.isDraft { return .yourDrafts }
             if pr.reviewStatus == .changesRequested || pr.checkSummary == .failing || pr.checkSummary == .cancelled
-                || pr.mergeable == .dirty { return .needsAction }
+                || pr.mergeable == .dirty
+            {
+                return .needsAction
+            }
             let checksOK = pr.checkSummary == .passing || (pr.checkSummary == .unknown && pr.checkCounts.isEmpty)
             if pr.reviewStatus == .approved, checksOK, pr.mergeable == .clean || pr.mergeable == .hasHooks { return .readyToMerge }
             return .waiting
@@ -159,7 +162,8 @@ public extension SavedView {
     /// Trims the name and query and checks them against the other views (`editing` is the one being changed, so
     /// keeping its own name is fine). Names compare case-insensitively.
     static func validate(name: String, query: String, among views: [SavedView], editing id: UUID? = nil) throws
-        -> (name: String, query: String) {
+        -> (name: String, query: String)
+    {
         let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !n.isEmpty else { throw SavedViewError.emptyName }
@@ -236,7 +240,8 @@ public struct SidebarLayout: Codable, Sendable, Equatable {
 
     public static func load(from defaults: UserDefaults = .standard, scope: AccountScope) -> SidebarLayout {
         guard let data = defaults.data(forKey: defaultsKey(for: scope)),
-              let layout = try? JSONDecoder().decode(SidebarLayout.self, from: data) else { return SidebarLayout() }
+            let layout = try? JSONDecoder().decode(SidebarLayout.self, from: data)
+        else { return SidebarLayout() }
         return layout
     }
 
@@ -299,8 +304,11 @@ public enum SearchCounts {
             try await client.queryAllowingErrors(build(count: scopes.count), variables: vars)
         var counts: [String: Int] = [:], failed: [String: String] = [:]
         for (i, s) in scopes.enumerated() {
-            if let e = errors.first(where: { $0.path.first == "o\(i)" }) { failed[s] = e.message }
-            else if let n = response.counts["o\(i)"] ?? nil { counts[s] = n }
+            if let e = errors.first(where: { $0.path.first == "o\(i)" }) {
+                failed[s] = e.message
+            } else if let n = response.counts["o\(i)"] ?? nil {
+                counts[s] = n
+            }
         }
         return (Result(counts: counts, errors: failed), response.rateLimit.map { [$0] } ?? [])
     }

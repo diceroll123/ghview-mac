@@ -43,17 +43,27 @@ struct SourceSidebar: View {
                         SourceRow(source: source, isDropTarget: dropTargetSourceID == source.id)
                             .tag(source.id)
                             .draggable(SourceDrag(kind: .source, id: source.id))
-                            .dropDestination(for: SourceDrag.self, action: { drops, _ in
-                                let ids = drops.filter { $0.kind == .source }.map(\.id)
-                                guard !ids.isEmpty else { return false }
-                                model.dropSources(ids: ids, onto: source, inGroup: group.id)
-                                return true
-                            }, isTargeted: { targeted in
-                                dropTargetSourceID = targeted ? source.id : (dropTargetSourceID == source.id ? nil : dropTargetSourceID)
-                            })
+                            .dropDestination(
+                                for: SourceDrag.self,
+                                action: { drops, _ in
+                                    let ids = drops.filter { $0.kind == .source }.map(\.id)
+                                    guard !ids.isEmpty else { return false }
+                                    model.dropSources(ids: ids, onto: source, inGroup: group.id)
+                                    return true
+                                },
+                                isTargeted: { targeted in
+                                    dropTargetSourceID = targeted ? source.id : (dropTargetSourceID == source.id ? nil : dropTargetSourceID)
+                                }
+                            )
                             .contextMenu {
-                                Button { model.open(source) } label: { Label("Open on GitHub", systemImage: "safari") }
-                                Button { model.open(source, pullRequests: true) } label: {
+                                Button {
+                                    model.open(source)
+                                } label: {
+                                    Label("Open on GitHub", systemImage: "safari")
+                                }
+                                Button {
+                                    model.open(source, pullRequests: true)
+                                } label: {
                                     Label("Open Pull Requests on GitHub", systemImage: "arrow.triangle.pull")
                                 }
                                 Divider()
@@ -123,8 +133,11 @@ struct SourceSidebar: View {
                 guard new != current else { return }
                 let added = new.subtracting(current)
                 let others = (added.isEmpty ? new : added).filter { $0.contains(":") }.sorted()
-                if let tag = others.first, let d = SidebarDestination.from(tag: tag) { model.destination = d }
-                else { model.destination = new.isEmpty ? nil : .sources(new.filter { !$0.contains(":") }) }
+                if let tag = others.first, let d = SidebarDestination.from(tag: tag) {
+                    model.destination = d
+                } else {
+                    model.destination = new.isEmpty ? nil : .sources(new.filter { !$0.contains(":") })
+                }
             })
     }
 
@@ -150,7 +163,9 @@ struct SourceRow: View {
         let empty = counts.map { $0.error == nil && $0.open == 0 } ?? false
         HStack(spacing: 8) {
             if model.settings.showRepoTree, source.repoId == nil {
-                Button { model.toggleExpanded(source) } label: {
+                Button {
+                    model.toggleExpanded(source)
+                } label: {
                     Image(systemName: model.isExpanded(source) ? "chevron.down" : "chevron.right")
                         .font(.caption2.weight(.semibold)).foregroundStyle(.tertiary).frame(width: 10)
                 }
@@ -194,10 +209,12 @@ struct InboxBlock: View {
             if layout.inboxExpanded {
                 ForEach(layout.visibleSections) { section in
                     let tag = SidebarDestination.inbox(section).tag
-                    InboxRow(title: section.title, symbol: section.symbol, count: model.inboxCounts[section] ?? 0,
-                             loading: model.inboxLoading && !model.inboxLoaded, tint: Self.tint(section))
-                        .tag(tag)
-                        .contextMenu { Button("Hide") { model.hideEntry(tag) } }
+                    InboxRow(
+                        title: section.title, symbol: section.symbol, count: model.inboxCounts[section] ?? 0,
+                        loading: model.inboxLoading && !model.inboxLoaded, tint: Self.tint(section)
+                    )
+                    .tag(tag)
+                    .contextMenu { Button("Hide") { model.hideEntry(tag) } }
                 }
             }
         }
@@ -206,25 +223,29 @@ struct InboxBlock: View {
             if layout.savedViewsExpanded {
                 ForEach(layout.visibleSearches) { search in
                     let tag = SidebarDestination.search(search).tag
-                    InboxRow(title: search.title, symbol: search.symbol, count: model.count(for: search) ?? 0,
-                             loading: false, tint: search == .reviewRequests ? Color.accentColor : nil)
-                        .tag(tag)
-                        .contextMenu {
-                            Button("Save as View...") { sheet = .newView(query: search.scope) }
-                            Button("Hide") { model.hideEntry(tag) }
-                        }
+                    InboxRow(
+                        title: search.title, symbol: search.symbol, count: model.count(for: search) ?? 0,
+                        loading: false, tint: search == .reviewRequests ? Color.accentColor : nil
+                    )
+                    .tag(tag)
+                    .contextMenu {
+                        Button("Save as View...") { sheet = .newView(query: search.scope) }
+                        Button("Hide") { model.hideEntry(tag) }
+                    }
                 }
                 ForEach(layout.visibleViews) { view in
                     let tag = SidebarDestination.savedView(view.id).tag
-                    InboxRow(title: view.name, symbol: "bookmark", count: model.count(for: view) ?? 0, loading: false,
-                             tint: nil, problem: model.searchCountErrors[view.scope])
-                        .tag(tag)
-                        .contextMenu {
-                            Button("Edit...") { sheet = .editView(view.id) }
-                            Button("Hide") { model.hideEntry(tag) }
-                            Divider()
-                            Button("Delete", role: .destructive) { model.deleteView(view.id) }
-                        }
+                    InboxRow(
+                        title: view.name, symbol: "bookmark", count: model.count(for: view) ?? 0, loading: false,
+                        tint: nil, problem: model.searchCountErrors[view.scope]
+                    )
+                    .tag(tag)
+                    .contextMenu {
+                        Button("Edit...") { sheet = .editView(view.id) }
+                        Button("Hide") { model.hideEntry(tag) }
+                        Divider()
+                        Button("Delete", role: .destructive) { model.deleteView(view.id) }
+                    }
                 }
                 if layout.savedViews.isEmpty {
                     Text("Save your own searches with +").font(.caption).foregroundStyle(.tertiary).selectionDisabled()
@@ -301,9 +322,13 @@ struct SavedViewsHeader: View {
             }
             .buttonStyle(.plain)
             Spacer()
-            Button { sheet = .newView(query: "") } label: { Image(systemName: "plus").font(.caption.weight(.semibold)) }
-                .buttonStyle(.plain).foregroundStyle(.secondary)
-                .help("Save a search as a view")
+            Button {
+                sheet = .newView(query: "")
+            } label: {
+                Image(systemName: "plus").font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.plain).foregroundStyle(.secondary)
+            .help("Save a search as a view")
         }
         .contentShape(Rectangle())
         .contextMenu {
@@ -336,13 +361,18 @@ struct InboxRow: View {
             Image(systemName: symbol).frame(width: 18).foregroundStyle(tint ?? .secondary)
             Text(title).lineLimit(1).foregroundStyle(count == 0 && !loading ? .secondary : .primary)
             Spacer(minLength: 4)
-            if let problem { Image(systemName: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange).help(problem) }
-            else if loading { ProgressView().controlSize(.mini) }
-            else if count > 0 {
+            if let problem {
+                Image(systemName: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange).help(problem)
+            } else if loading {
+                ProgressView().controlSize(.mini)
+            } else if count > 0 {
                 // A filled pill only for sections with an urgent tint (needs your review, needs action);
                 // everything else is just a count, not something asking for attention.
-                if let tint { CountPill(count: count, fill: tint, text: .white) }
-                else { Text("\(count)").font(.caption2.weight(.semibold)).monospacedDigit().foregroundStyle(.secondary) }
+                if let tint {
+                    CountPill(count: count, fill: tint, text: .white)
+                } else {
+                    Text("\(count)").font(.caption2.weight(.semibold)).monospacedDigit().foregroundStyle(.secondary)
+                }
             }
         }
         .padding(.leading, indent ? 4 : 0)
@@ -382,8 +412,13 @@ struct RepoChildren: View {
             .font(.caption).foregroundStyle(.secondary).padding(.leading, SourceSidebar.repoIndent).selectionDisabled()
         } else if repos.isEmpty {
             Group {
-                if model.loadingRepoSources.contains(source.id) { HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Loading repositories...") } }
-                else { Text("No repositories") }
+                if model.loadingRepoSources.contains(source.id) {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini); Text("Loading repositories...")
+                    }
+                } else {
+                    Text("No repositories")
+                }
             }
             .font(.caption).foregroundStyle(.tertiary).padding(.leading, SourceSidebar.repoIndent).selectionDisabled()
         }
@@ -451,14 +486,34 @@ struct RepoContextMenu: View {
     let repo: RepoId
 
     var body: some View {
-        Button { model.open(repo) } label: { Label("Open on GitHub", systemImage: "safari") }
-        Button { model.open(repo, pullRequests: true) } label: { Label("Open Pull Requests on GitHub", systemImage: "arrow.triangle.pull") }
+        Button {
+            model.open(repo)
+        } label: {
+            Label("Open on GitHub", systemImage: "safari")
+        }
+        Button {
+            model.open(repo, pullRequests: true)
+        } label: {
+            Label("Open Pull Requests on GitHub", systemImage: "arrow.triangle.pull")
+        }
         Divider()
-        Button { model.copy(repo.fullName) } label: { Label("Copy Name", systemImage: "doc.on.doc") }
-        Button { model.copy(repo.url.absoluteString) } label: { Label("Copy URL", systemImage: "link") }
+        Button {
+            model.copy(repo.fullName)
+        } label: {
+            Label("Copy Name", systemImage: "doc.on.doc")
+        }
+        Button {
+            model.copy(repo.url.absoluteString)
+        } label: {
+            Label("Copy URL", systemImage: "link")
+        }
         Divider()
-        Button { model.addRepoSource(repo) } label: { Label("Add to Sources", systemImage: "plus.square") }
-            .disabled(model.isSource(repo))
+        Button {
+            model.addRepoSource(repo)
+        } label: {
+            Label("Add to Sources", systemImage: "plus.square")
+        }
+        .disabled(model.isSource(repo))
     }
 }
 
@@ -475,7 +530,9 @@ struct CountBadges: View {
             if let error = c.error {
                 Image(systemName: c.needsSSO ? "lock.fill" : "exclamationmark.triangle.fill")
                     .font(.caption).foregroundStyle(.orange)
-                    .help(c.needsSSO ? "This organization requires SAML SSO, and your gh token is not authorized for it yet.\n\n\(error)" : error)
+                    .help(
+                        c.needsSSO
+                            ? "This organization requires SAML SSO, and your gh token is not authorized for it yet.\n\n\(error)" : error)
             } else {
                 HStack(spacing: 4) {
                     ForEach(model.settings.sourceBadgeEntries.filter(\.enabled)) { entry in
@@ -557,25 +614,32 @@ struct GroupHeader: View {
                 Image(systemName: "eye.slash").font(.caption2).foregroundStyle(.tertiary)
                     .help("\(hiddenInGroup) hidden in this group")
             }
-            Button { sheet = .add(group: group.id) } label: { Image(systemName: "plus").font(.caption.weight(.semibold)) }
-                .buttonStyle(.plain).foregroundStyle(.secondary)
-                .help("Add a source to \(group.name)")
-                .opacity(isHovered ? 1 : 0)
-                .allowsHitTesting(isHovered)
+            Button {
+                sheet = .add(group: group.id)
+            } label: {
+                Image(systemName: "plus").font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.plain).foregroundStyle(.secondary)
+            .help("Add a source to \(group.name)")
+            .opacity(isHovered ? 1 : 0)
+            .allowsHitTesting(isHovered)
         }
         .onHover { isHovered = $0 }
         .dropInsertionIndicator(isDropTarget)
         .contentShape(Rectangle())
         .draggable(SourceDrag(kind: .group, id: group.id.uuidString))
-        .dropDestination(for: SourceDrag.self, action: { drops, _ in
-            let sources = drops.filter { $0.kind == .source }.map(\.id)
-            if !sources.isEmpty { model.dropSources(ids: sources, onto: nil, inGroup: group.id); return true }
-            if let dragged = drops.first(where: { $0.kind == .group }).flatMap({ UUID(uuidString: $0.id) }) {
-                model.dropGroup(dragged, before: group.id)
-                return true
-            }
-            return false
-        }, isTargeted: { isDropTarget = $0 })
+        .dropDestination(
+            for: SourceDrag.self,
+            action: { drops, _ in
+                let sources = drops.filter { $0.kind == .source }.map(\.id)
+                if !sources.isEmpty { model.dropSources(ids: sources, onto: nil, inGroup: group.id); return true }
+                if let dragged = drops.first(where: { $0.kind == .group }).flatMap({ UUID(uuidString: $0.id) }) {
+                    model.dropGroup(dragged, before: group.id)
+                    return true
+                }
+                return false
+            }, isTargeted: { isDropTarget = $0 }
+        )
         .contextMenu {
             Button("Browse All in Group") {
                 model.selectedSourceIDs = Set(model.catalog.visibleSources(in: group).map(\.id))
@@ -676,7 +740,7 @@ struct SavedViewSheet: View {
         .task(id: query) {
             preview = nil
             guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-            try? await Task.sleep(for: .milliseconds(500)) // wait for a pause in typing
+            try? await Task.sleep(for: .milliseconds(500))  // wait for a pause in typing
             guard !Task.isCancelled else { return }
             let result = await model.previewCount(for: query)
             if !Task.isCancelled { preview = result }
@@ -693,14 +757,19 @@ struct SavedViewSheet: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         } else if !query.trimmingCharacters(in: .whitespaces).isEmpty {
-            HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Checking...").font(.caption).foregroundStyle(.secondary) }
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini); Text("Checking...").font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 
     private func save() {
         do {
-            if let id = editingID { try model.updateView(id, name: name, query: query) }
-            else { try model.saveView(name: name, query: query) }
+            if let id = editingID {
+                try model.updateView(id, name: name, query: query)
+            } else {
+                try model.saveView(name: name, query: query)
+            }
             dismiss()
         } catch { message = error.localizedDescription }
     }

@@ -107,16 +107,20 @@ private struct SidebarSettingsTab: View {
                 .font(.caption).foregroundStyle(.secondary)
             Toggle("Show Inbox", isOn: Binding(get: { !model.layout.inboxHidden }, set: { model.setInboxHidden(!$0) }))
             Toggle("Show Views", isOn: Binding(get: { !model.layout.savedViewsHidden }, set: { model.setSavedViewsHidden(!$0) }))
-            Toggle("Show the built-in searches (Authored by me, Assigned to me, ...)", isOn: Binding(
-                get: { !model.layout.quickSearchesHidden }, set: { model.setQuickSearchesHidden(!$0) }))
-                .padding(.leading, 20)
-                .disabled(model.layout.savedViewsHidden)
+            Toggle(
+                "Show the built-in searches (Authored by me, Assigned to me, ...)",
+                isOn: Binding(
+                    get: { !model.layout.quickSearchesHidden }, set: { model.setQuickSearchesHidden(!$0) })
+            )
+            .padding(.leading, 20)
+            .disabled(model.layout.savedViewsHidden)
             if model.hiddenSidebarCount > 0 {
                 Button("Show everything that was hidden at the top") { model.showAllSidebarItems() }
             }
             Section("Next to each source") {
                 SourceBadgePreview()
-                BadgeOrderEditor(entries: $settings.sourceBadgeEntries, showsColor: true,
+                BadgeOrderEditor(
+                    entries: $settings.sourceBadgeEntries, showsColor: true,
                     colorable: { $0 == .reviewRequested },
                     hint: { $0 == .repoCount ? "Organizations and users only" : nil }
                 ) { $0.label }
@@ -163,8 +167,10 @@ private struct RepositorySettingsTab: View {
                 RepoSubtitlePreview(entries: settings.repoSubtitleEntries)
                 BadgeOrderEditor(entries: orderableEntries) { $0.label }
                 Toggle("Lock icon for private repositories", isOn: lockIconEnabled)
-                Text("Shown when browsing a source's repositories, not in the sidebar. Drag to reorder; unchecked items are left out entirely.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text(
+                    "Shown when browsing a source's repositories, not in the sidebar. Drag to reorder; unchecked items are left out entirely."
+                )
+                .font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -215,11 +221,19 @@ private struct SourcesSettingsTab: View {
                 .padding(8).background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
             }
             VStack(alignment: .leading, spacing: 6) {
-                Toggle("Hide sources with no open PRs", isOn: Binding(get: { model.catalog.settings.autoHideEmpty },
-                                                                       set: { model.setAutoHideEmpty($0) }))
-                    .help("Hides sources that have nothing open. Anything you show by hand, and the source you are viewing, stays visible.")
-                Picker("New organizations start", selection: Binding(get: { model.catalog.settings.newOrgPolicy },
-                                                                      set: { model.setNewOrgPolicy($0) })) {
+                Toggle(
+                    "Hide sources with no open PRs",
+                    isOn: Binding(
+                        get: { model.catalog.settings.autoHideEmpty },
+                        set: { model.setAutoHideEmpty($0) })
+                )
+                .help("Hides sources that have nothing open. Anything you show by hand, and the source you are viewing, stays visible.")
+                Picker(
+                    "New organizations start",
+                    selection: Binding(
+                        get: { model.catalog.settings.newOrgPolicy },
+                        set: { model.setNewOrgPolicy($0) })
+                ) {
                     Text("Hidden").tag(SourceSettings.NewOrgPolicy.hidden)
                     Text("Visible").tag(SourceSettings.NewOrgPolicy.visible)
                 }
@@ -234,8 +248,11 @@ private struct SourcesSettingsTab: View {
                         Section {
                             ForEach(rows) { source in
                                 HStack {
-                                    Toggle(isOn: Binding(get: { !model.isSourceHidden(source) },
-                                                         set: { model.setSourcesHidden([source], !$0) })) {
+                                    Toggle(
+                                        isOn: Binding(
+                                            get: { !model.isSourceHidden(source) },
+                                            set: { model.setSourcesHidden([source], !$0) })
+                                    ) {
                                         HStack(spacing: 8) {
                                             AvatarView(source: source, size: 16)
                                             Text(source.displayName)
@@ -252,7 +269,9 @@ private struct SourcesSettingsTab: View {
                                     }
                                     .toggleStyle(.checkbox)
                                     Spacer()
-                                    CountBadges(counts: model.counts[source.id], repoCount: source.repoId == nil ? model.repos(in: source).count : nil)
+                                    CountBadges(
+                                        counts: model.counts[source.id],
+                                        repoCount: source.repoId == nil ? model.repos(in: source).count : nil)
                                     Menu("Move to") {
                                         ForEach(model.catalog.groups.filter { $0.id != group.id }) { other in
                                             Button(other.name) { model.moveSources([source], toGroup: other.id) }

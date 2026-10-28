@@ -2,22 +2,22 @@ import Foundation
 
 public enum ReposQuery {
     public static let query = """
-    query($login: String!, $first: Int!, $after: String) {
-      rateLimit { remaining limit cost resetAt used nodeCount }
-      repositoryOwner(login: $login) {
-        repositories(first: $first, after: $after, orderBy: {field: PUSHED_AT, direction: DESC}, ownerAffiliations: OWNER) {
-          pageInfo { hasNextPage endCursor }
-          nodes {
-            name owner { login } primaryLanguage { name } pushedAt stargazerCount
-            isArchived isPrivate visibility viewerPermission autoMergeAllowed hasIssuesEnabled
-            squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed isFork
-            latestRelease { tagName publishedAt }
-            pullRequests(states: OPEN) { totalCount }
+        query($login: String!, $first: Int!, $after: String) {
+          rateLimit { remaining limit cost resetAt used nodeCount }
+          repositoryOwner(login: $login) {
+            repositories(first: $first, after: $after, orderBy: {field: PUSHED_AT, direction: DESC}, ownerAffiliations: OWNER) {
+              pageInfo { hasNextPage endCursor }
+              nodes {
+                name owner { login } primaryLanguage { name } pushedAt stargazerCount
+                isArchived isPrivate visibility viewerPermission autoMergeAllowed hasIssuesEnabled
+                squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed isFork
+                latestRelease { tagName publishedAt }
+                pullRequests(states: OPEN) { totalCount }
+              }
+            }
           }
         }
-      }
-    }
-    """
+        """
 
     struct Response: Decodable, Sendable {
         var rateLimit: RateLimit
@@ -89,19 +89,20 @@ public enum ReposQuery {
     public static func fetch(owner: String, first: Int = 50, after: String? = nil, client: GraphQLClient) async throws -> Page {
         let r: Response = try await client.query(query, variables: ["login": owner, "first": first, "after": after])
         guard let conn = r.repositoryOwner?.repositories else { throw GraphQLError(messages: ["owner not found: \(owner)"]) }
-        return Page(repos: conn.nodes.compactMap { $0 }.map(map), hasNextPage: conn.pageInfo.hasNextPage,
-                    endCursor: conn.pageInfo.endCursor, rateLimit: r.rateLimit)
+        return Page(
+            repos: conn.nodes.compactMap { $0 }.map(map), hasNextPage: conn.pageInfo.hasNextPage,
+            endCursor: conn.pageInfo.endCursor, rateLimit: r.rateLimit)
     }
 
     // MARK: Individual repositories
 
     static let infoFields = """
-    name owner { login } primaryLanguage { name } pushedAt stargazerCount
-    isArchived isPrivate visibility viewerPermission autoMergeAllowed hasIssuesEnabled
-            squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed isFork
-    latestRelease { tagName publishedAt }
-    pullRequests(states: OPEN) { totalCount }
-    """
+        name owner { login } primaryLanguage { name } pushedAt stargazerCount
+        isArchived isPrivate visibility viewerPermission autoMergeAllowed hasIssuesEnabled
+                squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed isFork
+        latestRelease { tagName publishedAt }
+        pullRequests(states: OPEN) { totalCount }
+        """
 
     /// One aliased query for several repositories, so a PR's permissions never depend on the repo list having
     /// been enumerated. Names are validated before they are used, but they still travel as variables.
@@ -138,7 +139,8 @@ public enum ReposQuery {
     /// Metadata and the viewer's permissions for exactly these repositories. A repository GitHub does not return
     /// (missing or inaccessible) is absent from the result.
     public static func fetchInfo(_ ids: [RepoId], client: GraphQLClient, chunk: Int = 20) async throws
-        -> (repos: [RepoInfo], rateLimits: [RateLimit]) {
+        -> (repos: [RepoInfo], rateLimits: [RateLimit])
+    {
         var out: [RepoInfo] = [], limits: [RateLimit] = []
         for start in stride(from: 0, to: ids.count, by: chunk) {
             let part = Array(ids[start..<min(start + chunk, ids.count)])

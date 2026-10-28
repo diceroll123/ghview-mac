@@ -118,9 +118,11 @@ public struct GhCLI: GhRunner {
     /// How long to wait before the first retry; each one after that waits twice as long.
     public let transientRetryDelay: Duration
 
-    public init(executable: URL? = nil, timeout: Duration = .seconds(120), maxConcurrent: Int = 8,
-                rateLimitBackoff: Duration = .seconds(30), maxTransientRetries: Int = 2,
-                transientRetryDelay: Duration = .seconds(1)) throws {
+    public init(
+        executable: URL? = nil, timeout: Duration = .seconds(120), maxConcurrent: Int = 8,
+        rateLimitBackoff: Duration = .seconds(30), maxTransientRetries: Int = 2,
+        transientRetryDelay: Duration = .seconds(1)
+    ) throws {
         if let executable {
             self.executable = executable
         } else if let found = GhCLI.locate() {
@@ -133,7 +135,7 @@ public struct GhCLI: GhRunner {
         self.rateLimitBackoff = rateLimitBackoff
         self.maxTransientRetries = maxTransientRetries
         self.transientRetryDelay = transientRetryDelay
-        signal(SIGPIPE, SIG_IGN) // a child that exits without reading stdin must not take the app down
+        signal(SIGPIPE, SIG_IGN)  // a child that exits without reading stdin must not take the app down
     }
 
     /// GUI apps do not inherit the shell PATH, so probe common locations.
@@ -191,8 +193,10 @@ public struct GhCLI: GhRunner {
         }
     }
 
-    private static func runBlocking(_ exe: URL, _ args: [String], stdin: Data?, cwd: URL?, timeout: Duration,
-                                    running: RunningProcess) throws -> Data {
+    private static func runBlocking(
+        _ exe: URL, _ args: [String], stdin: Data?, cwd: URL?, timeout: Duration,
+        running: RunningProcess
+    ) throws -> Data {
         let process = Process()
         process.executableURL = exe
         process.arguments = args
@@ -225,9 +229,13 @@ public struct GhCLI: GhRunner {
             }
         }
         group.enter()
-        queue.async { collected.out = out.fileHandleForReading.readDataToEndOfFile(); group.leave() }
+        queue.async {
+            collected.out = out.fileHandleForReading.readDataToEndOfFile(); group.leave()
+        }
         group.enter()
-        queue.async { collected.err = err.fileHandleForReading.readDataToEndOfFile(); group.leave() }
+        queue.async {
+            collected.err = err.fileHandleForReading.readDataToEndOfFile(); group.leave()
+        }
 
         let seconds = Double(timeout.components.seconds) + Double(timeout.components.attoseconds) / 1e18
         let timer = DispatchWorkItem { running.timeout() }
@@ -239,12 +247,14 @@ public struct GhCLI: GhRunner {
 
         if running.cancelled { throw CancellationError() }
         if running.timedOut {
-            throw GhError(args: args, status: 124, stderr: "gh did not finish within \(Int(seconds)) seconds and was stopped",
-                          stdout: collected.out)
+            throw GhError(
+                args: args, status: 124, stderr: "gh did not finish within \(Int(seconds)) seconds and was stopped",
+                stdout: collected.out)
         }
         guard process.terminationStatus == 0 else {
-            throw GhError(args: args, status: process.terminationStatus,
-                          stderr: String(decoding: collected.err, as: UTF8.self), stdout: collected.out)
+            throw GhError(
+                args: args, status: process.terminationStatus,
+                stderr: String(decoding: collected.err, as: UTF8.self), stdout: collected.out)
         }
         return collected.out
     }

@@ -159,7 +159,7 @@ struct RepoSubtitleLine: View {
             case .releaseTag: repo.releaseTag.map(Text.init)
             case .releaseDate: repo.releaseDate.map { Text("Released ") + Text($0, format: .relative(presentation: .named)) }
             case .lastUpdated: repo.pushedAt.map { Text("Updated ") + Text($0, format: .relative(presentation: .named)) }
-            case .lockIcon: nil // shown by RepoFlags, not as text
+            case .lockIcon: nil  // shown by RepoFlags, not as text
             }
         }
     }

@@ -27,7 +27,8 @@ public enum SourceCountsQuery {
         var parts = ["rateLimit { remaining limit cost resetAt used nodeCount }"]
         for (i, s) in sources.enumerated() {
             parts.append("o\(i): search(query: \"is:pr is:open \(s.searchScope)\", type: ISSUE, first: 1) { issueCount }")
-            parts.append("r\(i): search(query: \"is:pr is:open review-requested:@me \(s.searchScope)\", type: ISSUE, first: 1) { issueCount }")
+            parts.append(
+                "r\(i): search(query: \"is:pr is:open review-requested:@me \(s.searchScope)\", type: ISSUE, first: 1) { issueCount }")
         }
         return "query {\n  " + parts.joined(separator: "\n  ") + "\n}"
     }
@@ -71,7 +72,8 @@ public enum SourceCountsQuery {
     /// set instead of failing their batch; a batch that fails outright (a 502, say) is simply missing from the
     /// result rather than failing every other batch too - the caller keeps last-known counts for those sources.
     public static func fetch(_ sources: [Source], client: GraphQLClient) async
-        -> (counts: [String: SourceCounts], rateLimits: [RateLimit]) {
+        -> (counts: [String: SourceCounts], rateLimits: [RateLimit])
+    {
         let batches = stride(from: 0, to: sources.count, by: batchSize).map {
             Array(sources[$0..<min($0 + batchSize, sources.count)])
         }
@@ -80,8 +82,10 @@ public enum SourceCountsQuery {
         await withTaskGroup(of: (counts: [String: SourceCounts], rateLimit: RateLimit?)?.self) { group in
             for batch in batches {
                 group.addTask {
-                    guard let (response, errors): (Response, [GraphQLErrorInfo]) =
-                        try? await client.queryAllowingErrors(build(batch)) else { return nil }
+                    guard
+                        let (response, errors): (Response, [GraphQLErrorInfo]) =
+                            try? await client.queryAllowingErrors(build(batch))
+                    else { return nil }
                     return (assemble(batch, response, errors: errors), response.rateLimit)
                 }
             }

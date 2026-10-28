@@ -106,38 +106,38 @@ struct PRDetailView: View {
 
     @ViewBuilder
     private func overview(_ pr: PR) -> some View {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(pr.title).font(.title2).bold()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(pr.title).font(.title2).bold()
+                HStack {
+                    Text(verbatim: "\(pr.repo.fullName)#\(pr.number)").foregroundStyle(.secondary)
+                    Text("\(pr.headRef) -> \(pr.baseRef)").font(.caption.monospaced()).foregroundStyle(.secondary)
+                    HeadCommit(pr: pr)
+                }
+                HStack(spacing: 12) {
+                    AuthorLabel(login: pr.author, bold: true)
+                    Text("+\(pr.additions)").foregroundStyle(.green)
+                    Text("-\(pr.deletions)").foregroundStyle(.red)
+                    MergeBadge(state: pr.mergeable)
+                    ReviewBadge(status: pr.reviewStatus)
+                }
+                if !pr.labels.isEmpty {
                     HStack {
-                        Text(verbatim: "\(pr.repo.fullName)#\(pr.number)").foregroundStyle(.secondary)
-                        Text("\(pr.headRef) -> \(pr.baseRef)").font(.caption.monospaced()).foregroundStyle(.secondary)
-                        HeadCommit(pr: pr)
-                    }
-                    HStack(spacing: 12) {
-                        AuthorLabel(login: pr.author, bold: true)
-                        Text("+\(pr.additions)").foregroundStyle(.green)
-                        Text("-\(pr.deletions)").foregroundStyle(.red)
-                        MergeBadge(state: pr.mergeable)
-                        ReviewBadge(status: pr.reviewStatus)
-                    }
-                    if !pr.labels.isEmpty {
-                        HStack {
-                            ForEach(pr.labels, id: \.name) { LabelChip(label: $0) }
-                            if pr.labelsTruncated, let total = pr.labelTotal {
-                                Text("+\(total - pr.labels.count) more").font(.caption).foregroundStyle(.secondary)
-                            }
+                        ForEach(pr.labels, id: \.name) { LabelChip(label: $0) }
+                        if pr.labelsTruncated, let total = pr.labelTotal {
+                            Text("+\(total - pr.labels.count) more").font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    reviewersSection(pr)
-                    Divider()
-                    checksSection(pr)
                 }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
+                reviewersSection(pr)
+                Divider()
+                checksSection(pr)
             }
-            .task(id: model.checksKey(pr)) { await model.loadChecks(pr) }
-            .task(id: model.activityKey(pr)) { await model.loadReviewers(pr) }
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .task(id: model.checksKey(pr)) { await model.loadChecks(pr) }
+        .task(id: model.activityKey(pr)) { await model.loadReviewers(pr) }
     }
 
     /// Who was asked to review. The total comes with every PR, so this can tell at a glance whether there is
@@ -152,8 +152,10 @@ struct PRDetailView: View {
             } else {
                 switch model.reviewRequests[model.activityKey(pr)] {
                 case nil, .loading:
-                    HStack { ProgressView().controlSize(.small); Text("Loading reviewers...").foregroundStyle(.secondary) }
-                        .font(.callout)
+                    HStack {
+                        ProgressView().controlSize(.small); Text("Loading reviewers...").foregroundStyle(.secondary)
+                    }
+                    .font(.callout)
                 case .failed(let message):
                     HStack {
                         Text(message).font(.caption).foregroundStyle(.secondary)
@@ -214,7 +216,9 @@ struct DiffTab: View {
             case .failed(let message):
                 ContentUnavailableView {
                     Label("Could not load diff", systemImage: "exclamationmark.triangle")
-                } description: { Text(message) } actions: {
+                } description: {
+                    Text(message)
+                } actions: {
                     Button("Retry") { Task { await model.loadDiff(pr, force: true) } }
                 }
             case .loaded(let files):
@@ -225,7 +229,9 @@ struct DiffTab: View {
                 }
             }
         }
-        .task(id: key) { toggled = []; await model.loadDiff(pr) }
+        .task(id: key) {
+            toggled = []; await model.loadDiff(pr)
+        }
     }
 
     private func isExpanded(_ f: DiffFile) -> Bool {
@@ -367,7 +373,11 @@ struct DiffLineRow: View {
             .textSelection(.disabled)
     }
     private var marker: String {
-        switch line.kind { case .added: "+"; case .removed: "-"; default: "" }
+        switch line.kind {
+        case .added: "+";
+        case .removed: "-";
+        default: ""
+        }
     }
     private var background: Color {
         switch line.kind {
@@ -395,7 +405,9 @@ struct ActivityTab: View {
                 case .failed(let message):
                     ContentUnavailableView {
                         Label("Could not load conversation", systemImage: "exclamationmark.triangle")
-                    } description: { Text(message) } actions: {
+                    } description: {
+                        Text(message)
+                    } actions: {
                         Button("Retry") { Task { await model.loadActivity(pr, force: true) } }
                     }
                 case .loaded(let activity):
@@ -414,13 +426,17 @@ struct ActivityTab: View {
                 Card(author: a.author, date: a.createdAt, badge: "description", url: nil) {
                     if a.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Text("No description provided.").foregroundStyle(.secondary).italic()
-                    } else { MarkdownView(text: a.description) }
+                    } else {
+                        MarkdownView(text: a.description)
+                    }
                 }
                 ForEach(a.items) { item in
                     Card(author: item.author, date: item.date, badge: badge(item.kind), tint: tint(item.kind), url: item.url) {
                         if item.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             EmptyView()
-                        } else { MarkdownView(text: item.body) }
+                        } else {
+                            MarkdownView(text: item.body)
+                        }
                     }
                 }
                 if !a.threads.isEmpty {
@@ -428,8 +444,10 @@ struct ActivityTab: View {
                     ForEach(a.threads) { ThreadCard(thread: $0) }
                 }
                 if a.truncated {
-                    Label("Showing the first part of a long conversation. Open in browser to see all of it.",
-                          systemImage: "ellipsis.circle").font(.caption).foregroundStyle(.secondary)
+                    Label(
+                        "Showing the first part of a long conversation. Open in browser to see all of it.",
+                        systemImage: "ellipsis.circle"
+                    ).font(.caption).foregroundStyle(.secondary)
                 }
             }
             .padding(12)
@@ -448,7 +466,11 @@ struct ActivityTab: View {
     }
     private func tint(_ kind: ActivityItem.Kind) -> Color {
         guard case .review(let s) = kind else { return .secondary }
-        switch s { case .approved: return Color.green; case .changesRequested: return Color.red; default: return Color.secondary }
+        switch s {
+        case .approved: return Color.green;
+        case .changesRequested: return Color.red;
+        default: return Color.secondary
+        }
     }
 }
 
@@ -565,8 +587,10 @@ struct CommentComposer: View {
                 Text("Cmd-Return to post").font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 if draft.posting { ProgressView().controlSize(.small) }
-                Button("Comment") { let pr = pr; Task { await model.postDraft(for: pr) } }
-                    .keyboardShortcut(.return, modifiers: .command).disabled(!canPost)
+                Button("Comment") {
+                    let pr = pr; Task { await model.postDraft(for: pr) }
+                }
+                .keyboardShortcut(.return, modifiers: .command).disabled(!canPost)
             }
         }
         .padding(10)

@@ -28,13 +28,16 @@ private func waitFor(_ condition: () -> Bool, seconds: Double = 5) async -> Bool
     let exe = try script("echo $$ > \(dir.path)\nexec sleep 60")
     let gh = try GhCLI(executable: exe)
     let task = Task { try await gh.run(["x"]) }
-    #expect(await waitFor { FileManager.default.fileExists(atPath: dir.path) && ((try? String(contentsOf: dir, encoding: .utf8))?.isEmpty == false) })
+    #expect(
+        await waitFor {
+            FileManager.default.fileExists(atPath: dir.path) && ((try? String(contentsOf: dir, encoding: .utf8))?.isEmpty == false)
+        })
     let pid = Int32((try String(contentsOf: dir, encoding: .utf8)).trimmingCharacters(in: .whitespacesAndNewlines))!
     #expect(alive(pid))
 
     task.cancel()
     await #expect(throws: CancellationError.self) { _ = try await task.value }
-    #expect(await waitFor { !alive(pid) })                                 // the sleeping child really exited
+    #expect(await waitFor { !alive(pid) })  // the sleeping child really exited
 }
 
 @Test func aCommandThatNeverFinishesTimesOut() async throws {
@@ -102,10 +105,11 @@ private func waitFor(_ condition: () -> Bool, seconds: Double = 5) async -> Bool
 
 @Test func aRateLimitHoldsBackTheNextCommand() async throws {
     let flag = FileManager.default.temporaryDirectory.appendingPathComponent("flag-\(UUID().uuidString)")
-    let exe = try script("""
-    if [ ! -e \(flag.path) ]; then touch \(flag.path); echo "You have exceeded a secondary rate limit" >&2; exit 1; fi
-    echo ok
-    """)
+    let exe = try script(
+        """
+        if [ ! -e \(flag.path) ]; then touch \(flag.path); echo "You have exceeded a secondary rate limit" >&2; exit 1; fi
+        echo ok
+        """)
     let gh = try GhCLI(executable: exe, rateLimitBackoff: .milliseconds(600))
     await #expect(throws: GhError.self) { _ = try await gh.run(["x"]) }
     let started = Date()
@@ -116,13 +120,14 @@ private func waitFor(_ condition: () -> Bool, seconds: Double = 5) async -> Bool
 
 @Test func aTransientGatewayErrorIsRetriedAndSucceeds() async throws {
     let flag = FileManager.default.temporaryDirectory.appendingPathComponent("flag-\(UUID().uuidString)")
-    let exe = try script("""
-    if [ ! -e \(flag.path) ]; then touch \(flag.path); echo "gh: Bad Gateway (HTTP 502)" >&2; exit 1; fi
-    echo ok
-    """)
+    let exe = try script(
+        """
+        if [ ! -e \(flag.path) ]; then touch \(flag.path); echo "gh: Bad Gateway (HTTP 502)" >&2; exit 1; fi
+        echo ok
+        """)
     let gh = try GhCLI(executable: exe, maxTransientRetries: 2, transientRetryDelay: .milliseconds(10))
     let out = try await gh.run(["x"])
-    #expect(String(decoding: out, as: UTF8.self) == "ok\n")           // succeeded on retry, caller saw no error
+    #expect(String(decoding: out, as: UTF8.self) == "ok\n")  // succeeded on retry, caller saw no error
 }
 
 @Test func transientRetriesGiveUpAfterTheLimit() async throws {
@@ -136,16 +141,20 @@ private func waitFor(_ condition: () -> Bool, seconds: Double = 5) async -> Bool
     let exe = try script("echo run >> \(log.path)\necho \"gh: Not Found (HTTP 404)\" >&2\nexit 1")
     let gh = try GhCLI(executable: exe, maxTransientRetries: 2, transientRetryDelay: .milliseconds(10))
     await #expect(throws: GhError.self) { _ = try await gh.run(["x"]) }
-    #expect(try String(contentsOf: log, encoding: .utf8).split(separator: "\n").count == 1)   // ran exactly once
+    #expect(try String(contentsOf: log, encoding: .utf8).split(separator: "\n").count == 1)  // ran exactly once
 }
 
 @Test func theSemaphoreGrantsSlotsInOrderAndReleasesThem() async throws {
     let sem = AsyncSemaphore(limit: 1)
     try await sem.acquire()
     let order = LockedBox<[Int]>([])
-    let a = Task { try await sem.acquire(); order.update { $0 += [1] }; await sem.release() }
+    let a = Task {
+        try await sem.acquire(); order.update { $0 += [1] }; await sem.release()
+    }
     try await Task.sleep(for: .milliseconds(20))
-    let b = Task { try await sem.acquire(); order.update { $0 += [2] }; await sem.release() }
+    let b = Task {
+        try await sem.acquire(); order.update { $0 += [2] }; await sem.release()
+    }
     try await Task.sleep(for: .milliseconds(20))
     await sem.release()
     try await a.value; try await b.value

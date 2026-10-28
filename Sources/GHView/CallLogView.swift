@@ -23,11 +23,13 @@ struct CallLogView: View {
     var body: some View {
         VStack(spacing: 0) {
             if model.callLog.isEmpty {
-                ContentUnavailableView("No requests yet", systemImage: "terminal",
-                                       description: Text("Every call GHView makes to the GitHub CLI shows up here."))
+                ContentUnavailableView(
+                    "No requests yet", systemImage: "terminal",
+                    description: Text("Every call GHView makes to the GitHub CLI shows up here."))
             } else if calls.isEmpty {
-                ContentUnavailableView(failuresOnly && search.isEmpty ? "Nothing has failed" : "No matching requests",
-                                       systemImage: failuresOnly && search.isEmpty ? "checkmark.circle" : "magnifyingglass")
+                ContentUnavailableView(
+                    failuresOnly && search.isEmpty ? "Nothing has failed" : "No matching requests",
+                    systemImage: failuresOnly && search.isEmpty ? "checkmark.circle" : "magnifyingglass")
             } else {
                 VSplitView {
                     table
@@ -45,10 +47,18 @@ struct CallLogView: View {
                     Text("Failed").tag(true)
                 }
                 .pickerStyle(.segmented)
-                Button { model.ghCalls.clear(); selection = nil } label: { Label("Clear", systemImage: "trash") }
-                    .help("Clear the log").disabled(model.callLog.isEmpty)
-                Button { copy(calls.map(\.text).joined(separator: "\n")) } label: { Label("Copy log", systemImage: "doc.on.doc") }
-                    .help("Copy the shown requests as text").disabled(calls.isEmpty)
+                Button {
+                    model.ghCalls.clear(); selection = nil
+                } label: {
+                    Label("Clear", systemImage: "trash")
+                }
+                .help("Clear the log").disabled(model.callLog.isEmpty)
+                Button {
+                    copy(calls.map(\.text).joined(separator: "\n"))
+                } label: {
+                    Label("Copy log", systemImage: "doc.on.doc")
+                }
+                .help("Copy the shown requests as text").disabled(calls.isEmpty)
             }
         }
         .navigationTitle("Request Log")
@@ -130,9 +140,15 @@ private struct CallDetail: View {
                     ResultBadge(call: call).font(.callout.weight(.semibold))
                     Text(call.date, format: .dateTime.hour().minute().second()).foregroundStyle(.secondary)
                     Text("took \(CallLogView.duration(call.duration))").foregroundStyle(.secondary)
-                    if call.bytes > 0 { Text(ByteCountFormatter.string(fromByteCount: Int64(call.bytes), countStyle: .file)).foregroundStyle(.secondary) }
+                    if call.bytes > 0 {
+                        Text(ByteCountFormatter.string(fromByteCount: Int64(call.bytes), countStyle: .file)).foregroundStyle(.secondary)
+                    }
                     Spacer()
-                    Button { copy() } label: { Label("Copy", systemImage: "doc.on.doc") }.controlSize(.small)
+                    Button {
+                        copy()
+                    } label: {
+                        Label("Copy", systemImage: "doc.on.doc")
+                    }.controlSize(.small)
                 }
                 .font(.caption)
                 if case .failed(_, let stderr) = call.outcome {

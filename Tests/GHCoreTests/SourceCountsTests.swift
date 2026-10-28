@@ -22,11 +22,12 @@ import Testing
 
 @Test func partialFailureMarksOnlyThatSource() async throws {
     // Real `gh` output for a query where one alias failed: exit 1, data and errors both on stdout.
-    let body = Data(#"""
-    {"data":{"rateLimit":{"remaining":10,"limit":5000,"cost":1,"resetAt":null},
-             "o0":{"issueCount":4},"r0":{"issueCount":1},"o1":null,"r1":{"issueCount":0}},
-     "errors":[{"type":"FORBIDDEN","path":["o1"],"message":"Resource protected by organization SAML enforcement."}]}
-    """#.utf8)
+    let body = Data(
+        #"""
+        {"data":{"rateLimit":{"remaining":10,"limit":5000,"cost":1,"resetAt":null},
+                 "o0":{"issueCount":4},"r0":{"issueCount":1},"o1":null,"r1":{"issueCount":0}},
+         "errors":[{"type":"FORBIDDEN","path":["o1"],"message":"Resource protected by organization SAML enforcement."}]}
+        """#.utf8)
     let gh = MockGh { args in throw GhError(args: args, status: 1, stderr: "gh: Resource protected", stdout: body) }
     let (counts, _) = await SourceCountsQuery.fetch([.user("me"), .org("locked")], client: GraphQLClient(gh: gh))
     #expect(counts["me"] == SourceCounts(open: 4, reviewRequested: 1, error: nil))
@@ -41,15 +42,19 @@ import Testing
     let (counts, _) = await SourceCountsQuery.fetch([.user("me")], client: GraphQLClient(gh: gh))
     #expect(counts.isEmpty)
 
-    let allErrors = MockGh { args in throw GhError(args: args, status: 1, stderr: "x", stdout: Data(#"{"errors":[{"message":"bad"}]}"#.utf8)) }
+    let allErrors = MockGh { args in
+        throw GhError(args: args, status: 1, stderr: "x", stdout: Data(#"{"errors":[{"message":"bad"}]}"#.utf8))
+    }
     let (counts2, _) = await SourceCountsQuery.fetch([.user("me")], client: GraphQLClient(gh: allErrors))
     #expect(counts2.isEmpty)
 }
 
 @Test func realPartialResponseFixtureDecodes() async throws {
-    struct Out: Decodable, Sendable { var ok: Issues; var missing: Nothing?
+    struct Out: Decodable, Sendable {
+        var ok: Issues; var missing: Nothing?
         struct Issues: Decodable, Sendable { var issueCount: Int }
-        struct Nothing: Decodable, Sendable { var id: String } }
+        struct Nothing: Decodable, Sendable { var id: String }
+    }
     let data = try fixture("graphql_partial")
     let gh = MockGh { args in throw GhError(args: args, status: 1, stderr: "gh: Could not resolve", stdout: data) }
     let (out, errors): (Out, [GraphQLErrorInfo]) = try await GraphQLClient(gh: gh).queryAllowingErrors("query")
@@ -60,9 +65,11 @@ import Testing
 @Test func batchesLargeSourceLists() async throws {
     let sources = (0..<120).map { Source.org("org\($0)") }
     let calls = LockedBox<Int>(0)
-    let gh = MockGh { _ in calls.update { $0 += 1 }; return Data(#"{"data":{"rateLimit":{"remaining":1,"limit":2,"cost":1,"resetAt":null}}}"#.utf8) }
+    let gh = MockGh { _ in
+        calls.update { $0 += 1 }; return Data(#"{"data":{"rateLimit":{"remaining":1,"limit":2,"cost":1,"resetAt":null}}}"#.utf8)
+    }
     let (counts, limits) = await SourceCountsQuery.fetch(sources, client: GraphQLClient(gh: gh))
-    #expect(calls.get() == 8 && limits.count == 8)          // 120 / 15, all concurrent
+    #expect(calls.get() == 8 && limits.count == 8)  // 120 / 15, all concurrent
     #expect(counts.count == 120 && counts.values.allSatisfy { $0.open == 0 })
 }
 

@@ -10,28 +10,31 @@ struct ContentView: View {
         NavigationSplitView {
             SourceSidebar(sheet: $sourceSheet)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 260, max: 380)
-            .sheet(item: $sourceSheet) { target in
-                switch target {
-                case .newGroup, .renameGroup: GroupNameSheet(target: target)
-                case .add, .edit: SourceEditSheet(target: target)
-                case .newView, .editView: SavedViewSheet(target: target)
-                }
-            }
-            .overlay {
-                // Only when there is not even a group to show a "Drop sources here"/"All sources hidden" row in -
-                // otherwise this collided with that per-group messaging, stacking a giant centered icon and an
-                // oddly-placed button on top of a sidebar that was already explaining itself.
-                if model.isStarting { ProgressView("Connecting to GitHub...") }
-                else if model.catalog.groups.isEmpty {
-                    ContentUnavailableView {
-                        Label("No sources", systemImage: "eye.slash")
-                    } actions: {
-                        Button("Manage Sources...") { model.pendingSettingsTab = .sources; openSettings() }
+                .sheet(item: $sourceSheet) { target in
+                    switch target {
+                    case .newGroup, .renameGroup: GroupNameSheet(target: target)
+                    case .add, .edit: SourceEditSheet(target: target)
+                    case .newView, .editView: SavedViewSheet(target: target)
                     }
                 }
-            }
-            .safeAreaInset(edge: .bottom) { SidebarFooter { sourceSheet = $0 } }
-            .navigationTitle("Sources")
+                .overlay {
+                    // Only when there is not even a group to show a "Drop sources here"/"All sources hidden" row in -
+                    // otherwise this collided with that per-group messaging, stacking a giant centered icon and an
+                    // oddly-placed button on top of a sidebar that was already explaining itself.
+                    if model.isStarting {
+                        ProgressView("Connecting to GitHub...")
+                    } else if model.catalog.groups.isEmpty {
+                        ContentUnavailableView {
+                            Label("No sources", systemImage: "eye.slash")
+                        } actions: {
+                            Button("Manage Sources...") {
+                                model.pendingSettingsTab = .sources; openSettings()
+                            }
+                        }
+                    }
+                }
+                .safeAreaInset(edge: .bottom) { SidebarFooter { sourceSheet = $0 } }
+                .navigationTitle("Sources")
         } content: {
             // Every destination (an inbox section, a search, a source, a repository) opens the same flat PR list.
             Group {
@@ -40,49 +43,65 @@ struct ContentView: View {
                     ResizableSplit {
                         RepoBrowserView()
                     } trailing: {
-                        if case .repo = model.destination { PRListView() }
-                        else { ContentUnavailableView("Select a repository", systemImage: "book.closed") }
-                    }
-                } else { PRListView() }
-            }
-                // The segment is an inset of the list rather than a row above it, so the list keeps its full height.
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    if model.showsSourceSegment {
-                        Picker("View", selection: Binding(get: { model.isBrowsingRepos ? SourceView.repos : .prs },
-                                                          set: { model.setBrowsingRepos($0 == .repos) })) {
-                            ForEach(SourceView.allCases) { Text($0.rawValue).tag($0) }
+                        if case .repo = model.destination {
+                            PRListView()
+                        } else {
+                            ContentUnavailableView("Select a repository", systemImage: "book.closed")
                         }
-                        .pickerStyle(.segmented).labelsHidden()
-                        .padding(8)
-                        .frame(maxWidth: .infinity)
-                        .solidBarBackground()
                     }
+                } else {
+                    PRListView()
                 }
-                .overlay {
-                    if case .problem(let problem) = model.connection {
-                        ConnectionProblemView(problem: problem).background(.background)
-                    } else if model.destination == nil, !model.isStarting {
-                        ContentUnavailableView("Select something in the sidebar", systemImage: "sidebar.left")
+            }
+            // The segment is an inset of the list rather than a row above it, so the list keeps its full height.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if model.showsSourceSegment {
+                    Picker(
+                        "View",
+                        selection: Binding(
+                            get: { model.isBrowsingRepos ? SourceView.repos : .prs },
+                            set: { model.setBrowsingRepos($0 == .repos) })
+                    ) {
+                        ForEach(SourceView.allCases) { Text($0.rawValue).tag($0) }
                     }
+                    .pickerStyle(.segmented).labelsHidden()
+                    .padding(8)
+                    .frame(maxWidth: .infinity)
+                    .solidBarBackground()
                 }
-                .navigationTitle(model.sourceTitle)
-                // With the repository list open the column holds two panes (200 + 320 wide at least), so it cannot shrink as far.
-                .navigationSplitViewColumnWidth(min: model.showsRepoPane ? 540 : 240, ideal: 635, max: 1000)
-                .background(ContentColumnWidth(prsMode: true))
-                .onChange(of: model.destination) { _, _ in model.loadPRs() }
+            }
+            .overlay {
+                if case .problem(let problem) = model.connection {
+                    ConnectionProblemView(problem: problem).background(.background)
+                } else if model.destination == nil, !model.isStarting {
+                    ContentUnavailableView("Select something in the sidebar", systemImage: "sidebar.left")
+                }
+            }
+            .navigationTitle(model.sourceTitle)
+            // With the repository list open the column holds two panes (200 + 320 wide at least), so it cannot shrink as far.
+            .navigationSplitViewColumnWidth(min: model.showsRepoPane ? 540 : 240, ideal: 635, max: 1000)
+            .background(ContentColumnWidth(prsMode: true))
+            .onChange(of: model.destination) { _, _ in model.loadPRs() }
         } detail: {
             PRDetailView()
         }
-        .confirmationDialog(model.pendingConfirmation?.title ?? "", isPresented: Binding(
-            get: { model.pendingConfirmation != nil }, set: { if !$0 { model.pendingConfirmation = nil } }
-        ), titleVisibility: .visible) {
+        .confirmationDialog(
+            model.pendingConfirmation?.title ?? "",
+            isPresented: Binding(
+                get: { model.pendingConfirmation != nil }, set: { if !$0 { model.pendingConfirmation = nil } }
+            ), titleVisibility: .visible
+        ) {
             Button(model.pendingConfirmation?.action == .close ? "Close" : "Merge", role: .destructive) { model.confirmPending() }
             Button("Cancel", role: .cancel) { model.pendingConfirmation = nil }
-        } message: { Text(model.pendingConfirmation?.message ?? "") }
+        } message: {
+            Text(model.pendingConfirmation?.message ?? "")
+        }
         .background(TransparentTitleBar())
         .alert("Error", isPresented: .constant(model.error != nil)) {
             Button("OK") { model.error = nil }
-        } message: { Text(model.error ?? "") }
+        } message: {
+            Text(model.error ?? "")
+        }
     }
 }
 
@@ -135,13 +154,14 @@ struct ResizableSplit<Leading: View, Trailing: View>: View {
                     // A wider invisible grab area than the one-point line.
                     Color.clear.frame(width: 9).contentShape(Rectangle())
                         .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
-                        .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                            .onChanged { drag in
-                                let base = startWidth ?? width
-                                startWidth = base
-                                width = min(max(base + drag.translation.width, minWidth), maxWidth)
-                            }
-                            .onEnded { _ in startWidth = nil })
+                        .gesture(
+                            DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                                .onChanged { drag in
+                                    let base = startWidth ?? width
+                                    startWidth = base
+                                    width = min(max(base + drag.translation.width, minWidth), maxWidth)
+                                }
+                                .onEnded { _ in startWidth = nil })
                 }
             trailing().frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -190,8 +210,11 @@ struct RepoBrowserView: View {
         }
         .overlay {
             if repos.isEmpty {
-                if model.reposLoading { ProgressView("Loading repositories...") }
-                else { ContentUnavailableView("No repositories", systemImage: "tray") }
+                if model.reposLoading {
+                    ProgressView("Loading repositories...")
+                } else {
+                    ContentUnavailableView("No repositories", systemImage: "tray")
+                }
             }
         }
     }
@@ -221,7 +244,11 @@ struct SourceProfileDetails: View {
     let isDuplicate: Bool
 
     private var kind: String {
-        switch profile.source { case .user: "User"; case .org: "Organization"; case .repo: "Repository" }
+        switch profile.source {
+        case .user: "User";
+        case .org: "Organization";
+        case .repo: "Repository"
+        }
     }
 
     private func chip(_ text: String, _ symbol: String) -> some View {
@@ -232,8 +259,12 @@ struct SourceProfileDetails: View {
     }
 
     private func line(_ text: String, _ symbol: String) -> some View {
-        Label { Text(text).lineLimit(1) } icon: { Image(systemName: symbol).frame(width: 14) }
-            .font(.callout).foregroundStyle(.secondary)
+        Label {
+            Text(text).lineLimit(1)
+        } icon: {
+            Image(systemName: symbol).frame(width: 14)
+        }
+        .font(.callout).foregroundStyle(.secondary)
     }
 
     var body: some View {
@@ -280,9 +311,12 @@ struct SourceProfileDetails: View {
     /// What is waiting in the source, or why that cannot be shown.
     @ViewBuilder private var activity: some View {
         if let problem = profile.accessProblem {
-            Label(profile.needsSSO ? "Needs SAML SSO authorization for your login. PRs here will not load until it is granted."
-                                   : "PRs here cannot be read: \(problem)", systemImage: "exclamationmark.triangle.fill")
-                .font(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            Label(
+                profile.needsSSO
+                    ? "Needs SAML SSO authorization for your login. PRs here will not load until it is granted."
+                    : "PRs here cannot be read: \(problem)", systemImage: "exclamationmark.triangle.fill"
+            )
+            .font(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
         } else if let open = profile.openPRs {
             HStack(spacing: 6) {
                 Image(systemName: "arrow.triangle.pull").foregroundStyle(open > 0 ? Color.accentColor : .secondary)
@@ -372,7 +406,9 @@ struct SidebarFooter: View {
     var body: some View {
         HStack(spacing: 6) {
             if let rl = model.rateLimit {
-                Button { showUsage.toggle() } label: {
+                Button {
+                    showUsage.toggle()
+                } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "gauge.with.dots.needle.bottom.50percent")
                         HStack(spacing: 2) {
@@ -407,7 +443,9 @@ struct SidebarFooter: View {
                 }
                 Divider()
                 Toggle("Show Inbox", isOn: Binding(get: { !model.layout.inboxHidden }, set: { model.setInboxHidden(!$0) }))
-                Toggle("Show Search Shortcuts", isOn: Binding(get: { !model.layout.quickSearchesHidden }, set: { model.setQuickSearchesHidden(!$0) }))
+                Toggle(
+                    "Show Search Shortcuts",
+                    isOn: Binding(get: { !model.layout.quickSearchesHidden }, set: { model.setQuickSearchesHidden(!$0) }))
                 Toggle("Show Views", isOn: Binding(get: { !model.layout.savedViewsHidden }, set: { model.setSavedViewsHidden(!$0) }))
                 Button("Show Everything at the Top") { model.showAllSidebarItems() }.disabled(model.hiddenSidebarCount == 0)
                 Divider()
@@ -513,7 +551,9 @@ struct SourceEditSheet: View {
                     Text("Type a username, organization or owner/repo").foregroundStyle(.secondary)
                     Text("A user, organization or single repository is detected automatically.").font(.caption).foregroundStyle(.tertiary)
                 case .checking:
-                    HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Looking up...").foregroundStyle(.secondary) }
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small); Text("Looking up...").foregroundStyle(.secondary)
+                    }
                 case .found(let profile):
                     SourceProfileDetails(profile: profile, isDuplicate: isDuplicate)
                 case .notFound(let n):
@@ -533,10 +573,10 @@ struct SourceEditSheet: View {
         guard let valid = try? SourceCatalog.validate(name) else { preview = .idle; return }
         if let cached = lookups[valid.lowercased()] { preview = .found(cached); return }
         if let editing, editing.name == valid {
-            preview = .found(SourceProfile(source: editing))                          // unchanged while editing: show it now,
-        } else {                                                                      // fill in the details below
+            preview = .found(SourceProfile(source: editing))  // unchanged while editing: show it now,
+        } else {  // fill in the details below
             preview = .idle
-            try? await Task.sleep(for: .milliseconds(500))                            // wait for a pause in typing
+            try? await Task.sleep(for: .milliseconds(500))  // wait for a pause in typing
             guard !Task.isCancelled else { return }
             preview = .checking
         }
@@ -561,7 +601,7 @@ struct SourceEditSheet: View {
                 switch target {
                 case .add: try await model.addSource(name, group: groupChoice, resolved: foundSource)
                 case .edit(let old): try await model.updateSource(old, to: name, resolved: foundSource)
-                case .newGroup, .renameGroup, .newView, .editView: break // handled by their own sheets
+                case .newGroup, .renameGroup, .newView, .editView: break  // handled by their own sheets
                 }
                 dismiss()
             } catch { message = error.localizedDescription }
@@ -580,11 +620,15 @@ struct RateLimitDetail: View {
             HStack {
                 Text("GitHub API usage").font(.headline)
                 Spacer()
-                Button { Task { await model.loadRateBuckets() } } label: { Image(systemName: "arrow.clockwise") }
-                    .buttonStyle(.borderless).help("Refresh (does not use your quota)")
+                Button {
+                    Task { await model.loadRateBuckets() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless).help("Refresh (does not use your quota)")
             }
             if let rl = model.rateLimit { graphQL(rl) }
-            let others = model.rateBuckets.filter { $0.name != "graphql" } // GraphQL's own numbers are authoritative
+            let others = model.rateBuckets.filter { $0.name != "graphql" }  // GraphQL's own numbers are authoritative
             if !model.rateBucketsLoaded {
                 // A skeleton reserving roughly the real content's space, so the popover does not resize once the
                 // (normally near-instant) fetch lands - it only ever shrinks slightly if there turn out to be
@@ -597,8 +641,9 @@ struct RateLimitDetail: View {
                 Divider()
                 Text("Other limits").font(.subheadline).foregroundStyle(.secondary)
                 ForEach(others) { bucket in
-                    otherLimitRow(title: bucket.title, remaining: bucket.remaining, limit: bucket.limit,
-                                  fractionUsed: bucket.fractionUsed, resetAt: bucket.resetAt)
+                    otherLimitRow(
+                        title: bucket.title, remaining: bucket.remaining, limit: bucket.limit,
+                        fractionUsed: bucket.fractionUsed, resetAt: bucket.resetAt)
                 }
             }
             Divider()
@@ -622,8 +667,10 @@ struct RateLimitDetail: View {
                 Text("\(remaining.formatted()) / \(limit.formatted())").monospacedDigit()
             }
             ProgressView(value: fractionUsed).tint(tint(fractionUsed))
-            HStack(spacing: 4) { Text("resets in"); Text(resetAt, style: .relative) }
-                .font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+                Text("resets in"); Text(resetAt, style: .relative)
+            }
+            .font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -640,7 +687,9 @@ struct RateLimitDetail: View {
             }
             ProgressView(value: rl.fractionUsed).tint(tint(rl.fractionUsed))
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 3) {
-                GridRow { Text("Used this window").foregroundStyle(.secondary); Text((rl.used ?? (rl.limit - rl.remaining)).formatted()) }
+                GridRow {
+                    Text("Used this window").foregroundStyle(.secondary); Text((rl.used ?? (rl.limit - rl.remaining)).formatted())
+                }
                 if let reset = rl.resetDate {
                     GridRow {
                         Text("Resets").foregroundStyle(.secondary)
@@ -682,4 +731,3 @@ struct RateLimitDetail: View {
         }
     }
 }
-

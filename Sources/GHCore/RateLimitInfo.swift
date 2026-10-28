@@ -39,10 +39,12 @@ public enum RateLimitAPI {
         let resp = try JSONDecoder().decode(Response.self, from: data)
         let main = ["core", "graphql", "search"]
         let buckets = resp.resources.map {
-            RateBucket(name: $0.key, limit: $0.value.limit, used: $0.value.used, remaining: $0.value.remaining,
-                       resetAt: Date(timeIntervalSince1970: $0.value.reset))
+            RateBucket(
+                name: $0.key, limit: $0.value.limit, used: $0.value.used, remaining: $0.value.remaining,
+                resetAt: Date(timeIntervalSince1970: $0.value.reset))
         }
-        return buckets
+        return
+            buckets
             .filter { main.contains($0.name) || $0.used > 0 }
             .sorted {
                 let a = main.firstIndex(of: $0.name) ?? main.count, b = main.firstIndex(of: $1.name) ?? main.count

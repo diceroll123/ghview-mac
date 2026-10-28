@@ -1,9 +1,9 @@
 import Foundation
 
 public enum MarkdownBlock: Hashable, Sendable {
-    case text(String)   // inline markdown, safe for AttributedString(markdown:)
+    case text(String)  // inline markdown, safe for AttributedString(markdown:)
     case code(String)
-    case rule           // horizontal rule: ---, ***, ___
+    case rule  // horizontal rule: ---, ***, ___
 }
 
 /// Turns GitHub-flavored comment bodies into blocks a SwiftUI view can render without a full markdown engine:
@@ -24,14 +24,19 @@ public enum MarkdownLite {
                 // Only a fence of the same character, at least as long, and with nothing after it closes the block.
                 if let f = fence(line), f.char == current.char, f.length >= current.length, f.info.isEmpty {
                     blocks.append(.code(code.joined(separator: "\n"))); code = []; open = nil
-                } else { code.append(String(line)) }
+                } else {
+                    code.append(String(line))
+                }
             } else if let f = fence(line) {
                 flushText()
                 open = (f.char, f.length)
-            } else if isRule(line) { flushText(); blocks.append(.rule) }
-            else { text.append(String(line)) }
+            } else if isRule(line) {
+                flushText(); blocks.append(.rule)
+            } else {
+                text.append(String(line))
+            }
         }
-        if open != nil { blocks.append(.code(code.joined(separator: "\n"))) } // unterminated fence
+        if open != nil { blocks.append(.code(code.joined(separator: "\n"))) }  // unterminated fence
         flushText()
         return blocks
     }
@@ -59,7 +64,9 @@ public enum MarkdownLite {
         guard let re = try? NSRegularExpression(pattern: #"<a\s+[^>]*?href="([^"]*)"[^>]*>([\s\S]*?)</a>"#) else { return s }
         var out = s
         for m in re.matches(in: s, range: NSRange(s.startIndex..., in: s)).reversed() {
-            guard let whole = Range(m.range, in: out), let u = Range(m.range(at: 1), in: s), let l = Range(m.range(at: 2), in: s) else { continue }
+            guard let whole = Range(m.range, in: out), let u = Range(m.range(at: 1), in: s), let l = Range(m.range(at: 2), in: s) else {
+                continue
+            }
             let url = String(s[u])
             let label = String(s[l]).split(whereSeparator: \.isWhitespace).joined(separator: " ")
             out.replaceSubrange(whole, with: label.isEmpty ? "<\(url)>" : "[\(label)](\(url))")
@@ -89,14 +96,16 @@ public enum MarkdownLite {
                     while j + r < chars.count, chars[j + r] == "`" { r += 1 }
                     if r == run { closed = j; break }
                     j += r
-                } else { j += 1 }
+                } else {
+                    j += 1
+                }
             }
             if let end = closed {
                 spans.append(String(chars[i..<(end + run)]))
                 out.append("\(spanOpen)\(spans.count - 1)\(spanClose)")
                 i = end + run
             } else {
-                out.append(String(repeating: "`", count: run)) // no closing run: literal backticks
+                out.append(String(repeating: "`", count: run))  // no closing run: literal backticks
                 i += run
             }
         }
@@ -107,7 +116,9 @@ public enum MarkdownLite {
         guard let re = try? NSRegularExpression(pattern: "\(spanOpen)(\\d+)\(spanClose)") else { return s }
         var out = s
         for m in re.matches(in: s, range: NSRange(s.startIndex..., in: s)).reversed() {
-            guard let whole = Range(m.range, in: out), let n = Range(m.range(at: 1), in: s), let idx = Int(s[n]), spans.indices.contains(idx) else { continue }
+            guard let whole = Range(m.range, in: out), let n = Range(m.range(at: 1), in: s), let idx = Int(s[n]),
+                spans.indices.contains(idx)
+            else { continue }
             out.replaceSubrange(whole, with: spans[idx])
         }
         return out
@@ -125,7 +136,8 @@ public enum MarkdownLite {
         var spans: [String] = []
         // Backtick spans and `<code>` elements are set aside first: their contents are literal, and the HTML
         // clean-up below would otherwise eat things like the `<String>` in `Array<String>`.
-        var t = protectCodeSpans(s.replacingOccurrences(of: String(spanOpen), with: "").replacingOccurrences(of: String(spanClose), with: ""), into: &spans)
+        var t = protectCodeSpans(
+            s.replacingOccurrences(of: String(spanOpen), with: "").replacingOccurrences(of: String(spanClose), with: ""), into: &spans)
         if let re = try? NSRegularExpression(pattern: #"<code>([\s\S]*?)</code>"#) {
             for m in re.matches(in: t, range: NSRange(t.startIndex..., in: t)).reversed() {
                 guard let whole = Range(m.range, in: t), let inner = Range(m.range(at: 1), in: t) else { continue }

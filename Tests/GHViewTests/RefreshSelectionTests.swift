@@ -32,7 +32,7 @@ private func waitUntilIdle(_ m: AppModel) async {
 
     m.loadPRs(soft: true)
     await waitUntilIdle(m)
-    #expect(m.prs.count == total)                          // not collapsed back to page one
+    #expect(m.prs.count == total)  // not collapsed back to page one
     #expect(m.selection.selected == [onPageThree.id])
     #expect(m.focusedPR?.id == onPageThree.id)
     #expect(m.selection.targets(in: m.prs).map(\.id) == [onPageThree.id])
@@ -46,10 +46,10 @@ private func waitUntilIdle(_ m: AppModel) async {
     m.selection.toggle(victim.id); m.selection.toggle(keeper.id)
     m.focused = victim.id
 
-    gone.set([victim.number])                              // merged by someone else
+    gone.set([victim.number])  // merged by someone else
     m.loadPRs(soft: true)
     await waitUntilIdle(m)
-    #expect(m.selection.selected == [keeper.id])           // count, targets and detail agree with the list
+    #expect(m.selection.selected == [keeper.id])  // count, targets and detail agree with the list
     #expect(m.focused == nil)
     #expect(!m.prs.contains { $0.id == victim.id })
 }
@@ -65,5 +65,5 @@ private func waitUntilIdle(_ m: AppModel) async {
     m.prs = []
     #expect(m.listEmptyState == .noOpenPRs)
     m.filter = "anything"
-    #expect(m.listEmptyState == .noOpenPRs)                // nothing to filter, so it is not a filter problem
+    #expect(m.listEmptyState == .noOpenPRs)  // nothing to filter, so it is not a filter problem
 }

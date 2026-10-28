@@ -8,11 +8,14 @@ import Testing
     #expect(chunks.count > 1)
     for c in chunks { #expect((PullRequestQuery.searchPrefix + c).count <= SearchScope.maxQueryLength) }
     let tokens = chunks.flatMap { $0.split(separator: " ").map(String.init) }
-    #expect(tokens == sources.map(\.searchScope))                     // every source, once, in order
+    #expect(tokens == sources.map(\.searchScope))  // every source, once, in order
     #expect(SearchScope.chunks(of: []).isEmpty)
     #expect(SearchScope.chunks(of: [.user("me"), .org("acme")]) == ["user:me org:acme"])
     // a tiny budget never drops a source, it just gives each its own chunk
-    #expect(SearchScope.chunks(of: sources.prefix(3).map { $0 }, maxLength: 5) == ["org:organization-0", "org:organization-1", "org:organization-2"])
+    #expect(
+        SearchScope.chunks(of: sources.prefix(3).map { $0 }, maxLength: 5) == [
+            "org:organization-0", "org:organization-1", "org:organization-2",
+        ])
 }
 
 private func node(_ n: Int, owner: String, created: String) -> String {
@@ -25,10 +28,11 @@ private func node(_ n: Int, owner: String, created: String) -> String {
     """
 }
 private func page(_ nodes: [String], next: String?) -> Data {
-    Data("""
-    {"data":{"rateLimit":{"remaining":9,"limit":10,"cost":1,"resetAt":null},
-      "search":{"pageInfo":{"hasNextPage":\(next != nil),"endCursor":\(next.map { "\"\($0)\"" } ?? "null")},"nodes":[\(nodes.joined(separator: ","))]}}}
-    """.utf8)
+    Data(
+        """
+        {"data":{"rateLimit":{"remaining":9,"limit":10,"cost":1,"resetAt":null},
+          "search":{"pageInfo":{"hasNextPage":\(next != nil),"endCursor":\(next.map { "\"\($0)\"" } ?? "null")},"nodes":[\(nodes.joined(separator: ","))]}}}
+        """.utf8)
 }
 
 @Test func pagerFetchesEveryChunkThenOnlyThoseWithMore() async throws {
@@ -38,9 +42,11 @@ private func page(_ nodes: [String], next: String?) -> Data {
         let after = args.first { $0.hasPrefix("after=") } ?? "-"
         seen.update { $0 += ["\(q)|\(after)"] }
         switch (q.contains("org:a"), after) {
-        case (true, "-"):          return page([node(1, owner: "a", created: "2026-01-01T00:00:00Z"), node(2, owner: "a", created: "2026-01-05T00:00:00Z")], next: "A1")
-        case (true, "after=A1"):   return page([node(3, owner: "a", created: "2026-01-03T00:00:00Z")], next: nil)
-        default:                   return page([node(10, owner: "b", created: "2026-01-04T00:00:00Z")], next: nil)
+        case (true, "-"):
+            return page(
+                [node(1, owner: "a", created: "2026-01-01T00:00:00Z"), node(2, owner: "a", created: "2026-01-05T00:00:00Z")], next: "A1")
+        case (true, "after=A1"): return page([node(3, owner: "a", created: "2026-01-03T00:00:00Z")], next: nil)
+        default: return page([node(10, owner: "b", created: "2026-01-04T00:00:00Z")], next: nil)
         }
     }
     let client = GraphQLClient(gh: gh)
@@ -48,15 +54,15 @@ private func page(_ nodes: [String], next: String?) -> Data {
     #expect(pager.hasMore && pager.pending == [0, 1])
 
     let first = try await CombinedPRs.fetchNext(pager, existing: [], client: client)
-    #expect(first.prs.map(\.number) == [2, 10, 1])                    // newest first across both chunks
+    #expect(first.prs.map(\.number) == [2, 10, 1])  // newest first across both chunks
     #expect(first.rateLimits.count == 2)
     pager = first.pager
-    #expect(pager.hasMore && pager.pending == [0])                     // only chunk a has another page
+    #expect(pager.hasMore && pager.pending == [0])  // only chunk a has another page
 
     seen.set([])
     let second = try await CombinedPRs.fetchNext(pager, existing: first.prs, client: client)
     #expect(seen.get().count == 1 && seen.get()[0].contains("org:a") && seen.get()[0].hasSuffix("after=A1"))
-    #expect(second.prs.map(\.number) == [2, 10, 3, 1])                // merged into the existing list
+    #expect(second.prs.map(\.number) == [2, 10, 3, 1])  // merged into the existing list
     #expect(!second.pager.hasMore)
 }
 
@@ -74,13 +80,14 @@ private func page(_ nodes: [String], next: String?) -> Data {
     let gh = MockGh { args in
         let q = args.first { $0.hasPrefix("q=") } ?? ""
         if q.contains("org:bad"), broken.get() { throw GhError(args: args, status: 1, stderr: "SSO required for org:bad") }
-        return page([node(q.contains("org:bad") ? 2 : 1, owner: q.contains("org:bad") ? "bad" : "ok", created: "2026-01-01T00:00:00Z")], next: nil)
+        return page(
+            [node(q.contains("org:bad") ? 2 : 1, owner: q.contains("org:bad") ? "bad" : "ok", created: "2026-01-01T00:00:00Z")], next: nil)
     }
     let client = GraphQLClient(gh: gh)
     let first = try await CombinedPRs.fetchNext(CombinedPager(scopes: ["org:ok", "org:bad"]), existing: [], client: client)
-    #expect(first.prs.map(\.number) == [1])                                   // the healthy source is usable
+    #expect(first.prs.map(\.number) == [1])  // the healthy source is usable
     #expect(first.failures == [.init(scope: "org:bad", message: "SSO required for org:bad")])
-    #expect(first.pager.hasMore && first.pager.pending == [1])                // only the failed one waits for a retry
+    #expect(first.pager.hasMore && first.pager.pending == [1])  // only the failed one waits for a retry
 
     // Retrying only the failed portion leaves the healthy chunk alone and keeps what was already loaded.
     let seen = LockedBox<[String]>([])
@@ -106,17 +113,19 @@ private func page(_ nodes: [String], next: String?) -> Data {
 // MARK: GitHub's 1,000 result ceiling
 
 private func pageWithTotal(_ nodes: [String], total: Int, next: String?) -> Data {
-    Data("""
-    {"data":{"rateLimit":{"remaining":9,"limit":10,"cost":1,"resetAt":null},
-      "search":{"issueCount":\(total),"pageInfo":{"hasNextPage":\(next != nil),"endCursor":\(next.map { "\"\($0)\"" } ?? "null")},"nodes":[\(nodes.joined(separator: ","))]}}}
-    """.utf8)
+    Data(
+        """
+        {"data":{"rateLimit":{"remaining":9,"limit":10,"cost":1,"resetAt":null},
+          "search":{"issueCount":\(total),"pageInfo":{"hasNextPage":\(next != nil),"endCursor":\(next.map { "\"\($0)\"" } ?? "null")},"nodes":[\(nodes.joined(separator: ","))]}}}
+        """.utf8)
 }
 
 private func range(in args: [String]) -> (lo: Date, hi: Date)? {
     guard let q = args.first(where: { $0.hasPrefix("q=") }), let r = q.range(of: "created:") else { return nil }
     let parts = q[r.upperBound...].split(separator: " ")[0].components(separatedBy: "..")
     guard parts.count == 2, let lo = ISO8601DateFormatter.plain.date(from: parts[0]),
-          let hi = ISO8601DateFormatter.plain.date(from: parts[1]) else { return nil }
+        let hi = ISO8601DateFormatter.plain.date(from: parts[1])
+    else { return nil }
     return (lo, hi)
 }
 
@@ -128,7 +137,9 @@ private func range(in args: [String]) -> (lo: Date, hi: Date)? {
     let gh = MockGh { args in
         counter.update { $0 += 1 }
         let n = counter.get()
-        guard let r = range(in: args) else { return pageWithTotal([node(n, owner: "big", created: "2026-01-01T00:00:00Z")], total: 3000, next: "C1") }
+        guard let r = range(in: args) else {
+            return pageWithTotal([node(n, owner: "big", created: "2026-01-01T00:00:00Z")], total: 3000, next: "C1")
+        }
         let overlap = max(0, min(r.hi.timeIntervalSince1970, end) - max(r.lo.timeIntervalSince1970, start))
         let total = Int((3000 * overlap / (end - start)).rounded())
         return pageWithTotal(total > 0 ? [node(n, owner: "big", created: "2020-01-01T00:00:00Z")] : [], total: total, next: nil)
@@ -153,7 +164,9 @@ private func range(in args: [String]) -> (lo: Date, hi: Date)? {
     // 2,000 PRs created in the very same second: no date range separates them.
     let instant = ISO8601DateFormatter.plain.date(from: "2024-05-05T12:00:00Z")!
     let gh = MockGh { args in
-        guard let r = range(in: args) else { return pageWithTotal([node(1, owner: "big", created: "2024-05-05T12:00:00Z")], total: 2000, next: "C1") }
+        guard let r = range(in: args) else {
+            return pageWithTotal([node(1, owner: "big", created: "2024-05-05T12:00:00Z")], total: 2000, next: "C1")
+        }
         let inside = r.lo <= instant && instant <= r.hi
         // GitHub stops paging at 1,000, so a full slice delivers its first results and then reports no next page.
         return pageWithTotal(inside ? [node(2, owner: "big", created: "2024-05-05T12:00:00Z")] : [], total: inside ? 2000 : 0, next: nil)
@@ -161,7 +174,7 @@ private func range(in args: [String]) -> (lo: Date, hi: Date)? {
     let client = GraphQLClient(gh: gh)
     let first = try await CombinedPRs.fetchNext(CombinedPager(scopes: ["org:big"]), existing: [], client: client)
     #expect(first.pager.chunks.count == 1)
-    #expect(!first.pager.isIncomplete)                   // nothing fetched from the slice yet
+    #expect(!first.pager.isIncomplete)  // nothing fetched from the slice yet
 
     let second = try await CombinedPRs.fetchNext(first.pager, existing: first.prs, client: client)
     #expect(!second.pager.hasMore)
@@ -191,7 +204,7 @@ private func range(in args: [String]) -> (lo: Date, hi: Date)? {
     #expect(result.prs.map(\.number).sorted() == [1, 2])
     #expect(result.failures == [.init(scope: "org:bad", message: "SAML enforcement")])
     #expect(result.pager.chunks.map(\.scope) == ["org:ok1", "org:bad", "org:ok2"])
-    #expect(queries.get().count == 4)                              // the packed search, then one per source
+    #expect(queries.get().count == 4)  // the packed search, then one per source
 }
 
 @Test func aUsersQueryIsNeverSplitIntoItsQualifiersAfterAFailure() async throws {
@@ -203,7 +216,8 @@ private func range(in args: [String]) -> (lo: Date, hi: Date)? {
     }
     // `a AND b` must not degrade to `a`, then `b`, whose union is a different (larger) result.
     await #expect(throws: GhError.self) {
-        _ = try await CombinedPRs.fetchNext(CombinedPager(scopes: ["author:@me label:bug"], explodable: false), existing: [], client: GraphQLClient(gh: gh))
+        _ = try await CombinedPRs.fetchNext(
+            CombinedPager(scopes: ["author:@me label:bug"], explodable: false), existing: [], client: GraphQLClient(gh: gh))
     }
     #expect(queries.get().count == 1 && queries.get()[0].hasSuffix("author:@me label:bug"))
 }

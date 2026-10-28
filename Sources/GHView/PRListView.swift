@@ -10,74 +10,88 @@ struct PRListView: View {
     var body: some View {
         @Bindable var model = model
         List(selection: $model.focused) {
-                ForEach(Array(model.visiblePRs.enumerated()), id: \.element.id) { index, pr in
-                    PRRow(pr: pr, hovered: hovered == pr.id)
-                        .prRowSeparator(margin: $rowMargin, measures: index == 0)
-                        .tag(pr.id)
-                        .onHover { hovered = $0 ? pr.id : (hovered == pr.id ? nil : hovered) }
-                        .contextMenu { PRActionsMenu(targets: model.contextTargets(for: pr)) }
+            ForEach(Array(model.visiblePRs.enumerated()), id: \.element.id) { index, pr in
+                PRRow(pr: pr, hovered: hovered == pr.id)
+                    .prRowSeparator(margin: $rowMargin, measures: index == 0)
+                    .tag(pr.id)
+                    .onHover { hovered = $0 ? pr.id : (hovered == pr.id ? nil : hovered) }
+                    .contextMenu { PRActionsMenu(targets: model.contextTargets(for: pr)) }
+            }
+            if model.prsLoading && !model.hasLoadedPRs {
+                ForEach(0..<6, id: \.self) {
+                    SkeletonRow(index: $0).prRowSeparator(margin: $rowMargin, measures: $0 == 0 && model.visiblePRs.isEmpty)
                 }
-                if model.prsLoading && !model.hasLoadedPRs {
-                    ForEach(0..<6, id: \.self) { SkeletonRow(index: $0).prRowSeparator(margin: $rowMargin, measures: $0 == 0 && model.visiblePRs.isEmpty) }
-                }
-                if model.hasMorePRs {
-                    HStack {
-                        Spacer()
-                        if model.prsLoadingMore { ProgressView().controlSize(.small) }
-                        else { Button("Load more") { model.loadPRs(more: true) }.buttonStyle(.link).disabled(model.prsLoading) }
-                        Spacer()
+            }
+            if model.hasMorePRs {
+                HStack {
+                    Spacer()
+                    if model.prsLoadingMore {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button("Load more") { model.loadPRs(more: true) }.buttonStyle(.link).disabled(model.prsLoading)
                     }
+                    Spacer()
                 }
             }
-            .overlay {
-                switch model.listEmptyState {
-                case .failed:
-                    ContentUnavailableView {
-                        Label("Could not load PRs", systemImage: "exclamationmark.triangle")
-                    } actions: { Button("Retry") { model.refresh() } }
-                case .noMatches:
-                    ContentUnavailableView {
-                        Label("No matching PRs", systemImage: "line.3.horizontal.decrease.circle")
-                    } description: {
-                        Text(model.hasMorePRs
-                             ? "None of the \(model.prs.count) loaded PRs match. More PRs have not been loaded."
-                             : "None of the \(model.prs.count) PRs match the filter.")
-                    } actions: {
-                        Button("Clear filter") { model.filter = "" }
-                        if model.hasMorePRs { Button("Load all") { Task { await model.loadAllPRs() } } }
-                    }
-                case .noOpenPRs:
-                    ContentUnavailableView(model.isSearchDestination ? "No open PRs match this search" : (model.destination.map(\.isInbox) == true ? "Nothing here" : "No open PRs"),
-                                           systemImage: "checkmark.circle")
-                case nil:
-                    EmptyView()
+        }
+        .overlay {
+            switch model.listEmptyState {
+            case .failed:
+                ContentUnavailableView {
+                    Label("Could not load PRs", systemImage: "exclamationmark.triangle")
+                } actions: {
+                    Button("Retry") { model.refresh() }
                 }
-            }
-            .overlay(alignment: .bottom) {
-                if let progress = model.batchProgress {
-                    BatchProgressHUD(progress: progress).padding(.bottom, 14)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+            case .noMatches:
+                ContentUnavailableView {
+                    Label("No matching PRs", systemImage: "line.3.horizontal.decrease.circle")
+                } description: {
+                    Text(
+                        model.hasMorePRs
+                            ? "None of the \(model.prs.count) loaded PRs match. More PRs have not been loaded."
+                            : "None of the \(model.prs.count) PRs match the filter.")
+                } actions: {
+                    Button("Clear filter") { model.filter = "" }
+                    if model.hasMorePRs { Button("Load all") { Task { await model.loadAllPRs() } } }
                 }
+            case .noOpenPRs:
+                ContentUnavailableView(
+                    model.isSearchDestination
+                        ? "No open PRs match this search" : (model.destination.map(\.isInbox) == true ? "Nothing here" : "No open PRs"),
+                    systemImage: "checkmark.circle")
+            case nil:
+                EmptyView()
             }
-            .animation(.easeInOut(duration: 0.2), value: model.batchProgress)
-            .onKeyPress(.space) {
-                if let id = model.focused { model.selection.toggle(id); return .handled }
-                return .ignored
+        }
+        .overlay(alignment: .bottom) {
+            if let progress = model.batchProgress {
+                BatchProgressHUD(progress: progress).padding(.bottom, 14)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
-            .onKeyPress(.escape) { model.selection.clear(); return .handled }
-            .focusedValue(\.prList, PRListCommands(selectAll: { model.selection.selectAll(visible: model.visiblePRs.map(\.id)) }))
-            // Header and selection bar are insets of the list, so it keeps its full height.
-            .safeAreaInset(edge: .top, spacing: 0) {
-                VStack(spacing: 0) {
-                    PRListHeader()
-                    Divider()
-                    if model.viewIsPartial { PartialViewNotice() }
-                    if !model.prFailures.isEmpty { SourceFailureNotice(failures: model.prFailures.map { ($0.scope, $0.message) }) { model.retryFailedSources() } }
-                    if let gap = model.searchShortfall { SearchLimitNotice(received: gap.received, total: gap.total) }
-                    if model.selection.isSelectionMode { SelectionBar() }
+        }
+        .animation(.easeInOut(duration: 0.2), value: model.batchProgress)
+        .onKeyPress(.space) {
+            if let id = model.focused { model.selection.toggle(id); return .handled }
+            return .ignored
+        }
+        .onKeyPress(.escape) {
+            model.selection.clear(); return .handled
+        }
+        .focusedValue(\.prList, PRListCommands(selectAll: { model.selection.selectAll(visible: model.visiblePRs.map(\.id)) }))
+        // Header and selection bar are insets of the list, so it keeps its full height.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            VStack(spacing: 0) {
+                PRListHeader()
+                Divider()
+                if model.viewIsPartial { PartialViewNotice() }
+                if !model.prFailures.isEmpty {
+                    SourceFailureNotice(failures: model.prFailures.map { ($0.scope, $0.message) }) { model.retryFailedSources() }
                 }
-                .solidBarBackground()
+                if let gap = model.searchShortfall { SearchLimitNotice(received: gap.received, total: gap.total) }
+                if model.selection.isSelectionMode { SelectionBar() }
             }
+            .solidBarBackground()
+        }
     }
 }
 
@@ -100,7 +114,9 @@ struct PRRow: View {
             Button {
                 if NSEvent.modifierFlags.contains(.shift) {
                     model.selection.selectRange(to: pr.id, in: model.visiblePRs.map(\.id))
-                } else { model.selection.toggle(pr.id) }
+                } else {
+                    model.selection.toggle(pr.id)
+                }
             } label: {
                 Image(systemName: checked ? "checkmark.square.fill" : "square")
                     .foregroundStyle(checked ? Color.accentColor : .secondary)
@@ -162,7 +178,7 @@ struct PRRowSeparator: ViewModifier {
         content
             // A row sizes to its contents, so without this the line below would only be as wide as the title.
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 6) // the table's own 4pt inset plus the row's 2pt, so the row keeps its height
+            .padding(.vertical, 6)  // the table's own 4pt inset plus the row's 2pt, so the row keeps its height
             .background {
                 if measures { GeometryReader { geo in TableMarginProbe(cellWidth: geo.size.width, margin: $margin) } }
             }
@@ -170,10 +186,10 @@ struct PRRowSeparator: ViewModifier {
                 Rectangle()
                     .fill(Color(nsColor: .separatorColor))
                     .frame(height: 1 / displayScale)
-                    .padding(.horizontal, -margin) // out to the table's own edges, past the cell
+                    .padding(.horizontal, -margin)  // out to the table's own edges, past the cell
             }
             .listRowSeparator(.hidden)
-            .listRowInsets(EdgeInsets()) // the default horizontal insets are zero, so only the vertical ones change
+            .listRowInsets(EdgeInsets())  // the default horizontal insets are zero, so only the vertical ones change
     }
 
     /// What the table was measured to inset a row's content on the development machine (a 587pt table had a 555pt
@@ -201,7 +217,8 @@ private struct TableMarginProbe: NSViewRepresentable {
         let cellWidth = cellWidth
         DispatchQueue.main.async {
             guard let table = view.enclosingScrollView?.contentView.bounds.width,
-                  let m = PRRowSeparator.margin(tableWidth: table, cellWidth: cellWidth), abs(m - margin) >= 0.5 else { return }
+                let m = PRRowSeparator.margin(tableWidth: table, cellWidth: cellWidth), abs(m - margin) >= 0.5
+            else { return }
             margin = m
         }
     }
@@ -222,8 +239,11 @@ struct PartialViewNotice: View {
             Text("Filtering and sorting only the \(model.prs.count) loaded PRs. More exist.")
                 .font(.caption).foregroundStyle(.secondary)
             Spacer()
-            if model.loadingAllPRs { ProgressView().controlSize(.small) }
-            else { Button("Load all") { Task { await model.loadAllPRs() } }.controlSize(.small) }
+            if model.loadingAllPRs {
+                ProgressView().controlSize(.small)
+            } else {
+                Button("Load all") { Task { await model.loadAllPRs() } }.controlSize(.small)
+            }
         }
         .padding(.horizontal, 10).padding(.vertical, 5)
     }
@@ -257,8 +277,10 @@ struct SearchLimitNotice: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
-            Text("GitHub limits search results: only \(received) of \(total) matching PRs can be reached. Select fewer sources, or one repository, to see the rest.")
-                .font(.caption).foregroundStyle(.secondary)
+            Text(
+                "GitHub limits search results: only \(received) of \(total) matching PRs can be reached. Select fewer sources, or one repository, to see the rest."
+            )
+            .font(.caption).foregroundStyle(.secondary)
             Spacer()
         }
         .padding(.horizontal, 10).padding(.vertical, 5)
@@ -294,34 +316,80 @@ struct PRActionsMenu: View {
 
     var body: some View {
         Group {
-            Button { model.perform(.approve, on: targets) } label: { Label("Approve", systemImage: "checkmark.circle") }
+            Button {
+                model.perform(.approve, on: targets)
+            } label: {
+                Label("Approve", systemImage: "checkmark.circle")
+            }
             if model.offers(.merge, for: targets) {
-                Button { model.perform(.merge, on: targets) } label: { Label("Merge", systemImage: "arrow.triangle.merge") }
+                Button {
+                    model.perform(.merge, on: targets)
+                } label: {
+                    Label("Merge", systemImage: "arrow.triangle.merge")
+                }
             }
             if targets.allSatisfy(\.autoMerge) {
                 if model.offers(.disableAutoMerge, for: targets) {
-                    Button { model.perform(.disableAutoMerge, on: targets) } label: { Label("Cancel auto-merge", systemImage: "bolt.slash.fill") }
+                    Button {
+                        model.perform(.disableAutoMerge, on: targets)
+                    } label: {
+                        Label("Cancel auto-merge", systemImage: "bolt.slash.fill")
+                    }
                 }
             } else if model.offers(.autoMerge, for: targets) {
-                Button { model.perform(.autoMerge, on: targets) } label: { Label("Auto-merge", systemImage: "bolt.fill") }
+                Button {
+                    model.perform(.autoMerge, on: targets)
+                } label: {
+                    Label("Auto-merge", systemImage: "bolt.fill")
+                }
             }
-            Button { model.perform(.rebase, on: targets) } label: { Label("Rebase", systemImage: "arrow.triangle.2.circlepath") }
-            Button { model.perform(.markReady, on: targets) } label: { Label("Mark ready", systemImage: "checkmark.seal") }
-            Button { model.perform(.close, on: targets) } label: { Label("Close", systemImage: "xmark.circle") }
-            Button { model.perform(.reopen, on: targets) } label: { Label("Reopen", systemImage: "arrow.counterclockwise.circle") }
+            Button {
+                model.perform(.rebase, on: targets)
+            } label: {
+                Label("Rebase", systemImage: "arrow.triangle.2.circlepath")
+            }
+            Button {
+                model.perform(.markReady, on: targets)
+            } label: {
+                Label("Mark ready", systemImage: "checkmark.seal")
+            }
+            Button {
+                model.perform(.close, on: targets)
+            } label: {
+                Label("Close", systemImage: "xmark.circle")
+            }
+            Button {
+                model.perform(.reopen, on: targets)
+            } label: {
+                Label("Reopen", systemImage: "arrow.counterclockwise.circle")
+            }
             if targets.contains(where: \.isDependabot) {
                 Menu {
                     ForEach(Dependabot.commands, id: \.key) { c in
                         Button(c.label) { model.dependabot(c.comment, on: targets) }
                     }
-                } label: { Label("Dependabot", systemImage: "shippingbox") }
+                } label: {
+                    Label("Dependabot", systemImage: "shippingbox")
+                }
             }
             Divider()
-            Button { model.open(targets) } label: { Label("Open in browser", systemImage: "safari") }
-            Button { model.copyURLs(targets) } label: { Label("Copy URL", systemImage: "link") }
+            Button {
+                model.open(targets)
+            } label: {
+                Label("Open in browser", systemImage: "safari")
+            }
+            Button {
+                model.copyURLs(targets)
+            } label: {
+                Label("Copy URL", systemImage: "link")
+            }
             if let repo = targets.first?.repo, Set(targets.map(\.repo)).count == 1 {
                 Divider()
-                Menu { RepoContextMenu(repo: repo) } label: { Label(repo.fullName, systemImage: "book.closed") }
+                Menu {
+                    RepoContextMenu(repo: repo)
+                } label: {
+                    Label(repo.fullName, systemImage: "book.closed")
+                }
             }
         }
     }
@@ -349,8 +417,12 @@ struct PRListHeader: View {
                             .textFieldStyle(.plain).autocorrectionDisabled()
                             .onSubmit { model.loadPRs() }
                         if model.searchText != (model.defaultSearchText ?? "") {
-                            Button { model.searchText = model.defaultSearchText ?? "" } label: { Image(systemName: "arrow.uturn.backward.circle.fill") }
-                                .buttonStyle(.plain).foregroundStyle(.secondary).help("Back to the original search")
+                            Button {
+                                model.searchText = model.defaultSearchText ?? ""
+                            } label: {
+                                Image(systemName: "arrow.uturn.backward.circle.fill")
+                            }
+                            .buttonStyle(.plain).foregroundStyle(.secondary).help("Back to the original search")
                         }
                     } else {
                         TextField("Filter: text, author:, label:, is:draft...", text: $model.filter)
@@ -359,12 +431,19 @@ struct PRListHeader: View {
                         if model.isFiltering {
                             Text("\(model.visiblePRs.count) of \(model.prs.count)")
                                 .font(.caption).monospacedDigit().foregroundStyle(.secondary)
-                            Button { model.filter = "" } label: { Image(systemName: "xmark.circle.fill") }
-                                .buttonStyle(.plain).foregroundStyle(.secondary).help("Clear filter")
+                            Button {
+                                model.filter = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                            }
+                            .buttonStyle(.plain).foregroundStyle(.secondary).help("Clear filter")
                         }
-                        Button { showFilters.toggle() } label: {
-                            Image(systemName: model.isFiltering
-                                  ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                        Button {
+                            showFilters.toggle()
+                        } label: {
+                            Image(
+                                systemName: model.isFiltering
+                                    ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(model.isFiltering ? Color.accentColor : .secondary)
@@ -388,9 +467,14 @@ struct PRListHeader: View {
                 .fixedSize()
                 .layoutPriority(1)
                 .help("Sort the list")
-                Button { model.refresh() } label: {
-                    if model.prsLoading && model.hasLoadedPRs { ProgressView().controlSize(.small) }
-                    else { Image(systemName: "arrow.clockwise") }
+                Button {
+                    model.refresh()
+                } label: {
+                    if model.prsLoading && model.hasLoadedPRs {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                    }
                 }
                 .frame(width: 20)
                 .disabled(model.prsLoading)
@@ -421,9 +505,10 @@ struct PRListHeader: View {
     /// keeping an edited saved view's search.
     @ViewBuilder private var searchTitle: some View {
         if case .savedView(let id) = model.destination,
-           let view = model.layout.savedViews.first(where: { $0.id == id }),
-           model.searchText.trimmingCharacters(in: .whitespacesAndNewlines) != view.query,
-           !model.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let view = model.layout.savedViews.first(where: { $0.id == id }),
+            model.searchText.trimmingCharacters(in: .whitespacesAndNewlines) != view.query,
+            !model.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
             HStack {
                 Spacer()
                 Button("Save changes to view") { try? model.updateView(id, name: view.name, query: model.searchText) }
@@ -508,7 +593,9 @@ struct FilterPopover: View {
                     }
                     if !authors.isEmpty {
                         section("Author") {
-                            ForEach(authors, id: \.name) { a in check(a.name, FilterQuery.token(.author, a.name), count: a.count, author: true) }
+                            ForEach(authors, id: \.name) { a in
+                                check(a.name, FilterQuery.token(.author, a.name), count: a.count, author: true)
+                            }
                         }
                     }
                     if !labels.isEmpty {
@@ -536,8 +623,10 @@ struct FilterPopover: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Text("Same author, label or status options match any of them; different groups must all match. Prefix a token with - to exclude it.")
-                .font(.caption2).foregroundStyle(.tertiary)
+            Text(
+                "Same author, label or status options match any of them; different groups must all match. Prefix a token with - to exclude it."
+            )
+            .font(.caption2).foregroundStyle(.tertiary)
         }
         .padding(14)
         .frame(width: 300, height: 460)

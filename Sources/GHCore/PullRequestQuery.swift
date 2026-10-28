@@ -4,23 +4,23 @@ import Foundation
 /// mergeable state, labels and diff stats. Replaces ~5 REST calls per PR.
 public enum PullRequestQuery {
     static let fragment = """
-    fragment PRFields on PullRequest {
-      number title isDraft state createdAt updatedAt url
-      headRefName baseRefName headRefOid additions deletions
-      mergeable reviewDecision
-      author { login }
-      repository { name owner { login } }
-      autoMergeRequest { enabledAt }
-      viewerLatestReview { state }
-      comments { totalCount }
-      labels(first: 20) { totalCount nodes { name color } }
-      reviewRequests { totalCount }
-      reviewRequestNodes: reviewRequests(first: 20) @include(if: $needsReviewers) {
-        nodes { requestedReviewer { ... on User { login } ... on Team { slug organization { login } } } }
-      }
-      commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
-    }
-    """
+        fragment PRFields on PullRequest {
+          number title isDraft state createdAt updatedAt url
+          headRefName baseRefName headRefOid additions deletions
+          mergeable reviewDecision
+          author { login }
+          repository { name owner { login } }
+          autoMergeRequest { enabledAt }
+          viewerLatestReview { state }
+          comments { totalCount }
+          labels(first: 20) { totalCount nodes { name color } }
+          reviewRequests { totalCount }
+          reviewRequestNodes: reviewRequests(first: 20) @include(if: $needsReviewers) {
+            nodes { requestedReviewer { ... on User { login } ... on Team { slug organization { login } } } }
+          }
+          commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+        }
+        """
 
     /// The individual check runs and the exact per-state breakdown for one PR's head commit. Split out of
     /// `PRFields` because computing this - even just the breakdown, without listing the checks - is real work for
@@ -28,42 +28,42 @@ public enum PullRequestQuery {
     /// field GitHub itself uses for the dot next to a commit everywhere else). So this is fetched lazily, one PR
     /// at a time, only when its detail view is shown.
     static let checksFragment = """
-    fragment PRCheckNodes on PullRequest {
-      commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) {
-        checkRunCountsByState { state count }
-        statusContextCountsByState { state count }
-        nodes {
-        __typename
-        ... on CheckRun { id databaseId name status conclusion detailsUrl checkSuite { workflowRun { workflow { name } } } }
-        ... on StatusContext { id context state targetUrl }
-      } } } } } }
-    }
-    """
+        fragment PRCheckNodes on PullRequest {
+          commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) {
+            checkRunCountsByState { state count }
+            statusContextCountsByState { state count }
+            nodes {
+            __typename
+            ... on CheckRun { id databaseId name status conclusion detailsUrl checkSuite { workflowRun { workflow { name } } } }
+            ... on StatusContext { id context state targetUrl }
+          } } } } } }
+        }
+        """
 
     public static let repoPRs = """
-    query($owner: String!, $name: String!, $first: Int!, $after: String, $needsReviewers: Boolean!) {
-      rateLimit { remaining limit cost resetAt used nodeCount }
-      repository(owner: $owner, name: $name) {
-        pullRequests(states: OPEN, first: $first, after: $after, orderBy: {field: CREATED_AT, direction: DESC}) {
-          pageInfo { hasNextPage endCursor }
-          nodes { ...PRFields }
+        query($owner: String!, $name: String!, $first: Int!, $after: String, $needsReviewers: Boolean!) {
+          rateLimit { remaining limit cost resetAt used nodeCount }
+          repository(owner: $owner, name: $name) {
+            pullRequests(states: OPEN, first: $first, after: $after, orderBy: {field: CREATED_AT, direction: DESC}) {
+              pageInfo { hasNextPage endCursor }
+              nodes { ...PRFields }
+            }
+          }
         }
-      }
-    }
-    \(fragment)
-    """
+        \(fragment)
+        """
 
     public static let searchPRs = """
-    query($q: String!, $first: Int!, $after: String, $needsReviewers: Boolean!) {
-      rateLimit { remaining limit cost resetAt used nodeCount }
-      search(query: $q, type: ISSUE, first: $first, after: $after) {
-        issueCount
-        pageInfo { hasNextPage endCursor }
-        nodes { ...PRFields }
-      }
-    }
-    \(fragment)
-    """
+        query($q: String!, $first: Int!, $after: String, $needsReviewers: Boolean!) {
+          rateLimit { remaining limit cost resetAt used nodeCount }
+          search(query: $q, type: ISSUE, first: $first, after: $after) {
+            issueCount
+            pageInfo { hasNextPage endCursor }
+            nodes { ...PRFields }
+          }
+        }
+        \(fragment)
+        """
 
     // MARK: Response DTOs
 
@@ -185,8 +185,9 @@ public enum PullRequestQuery {
             if c.typename == "CheckRun" {
                 let base = c.name ?? "check"
                 let name = c.checkSuite?.workflowRun?.workflow.map { "\($0.name) / \(base)" } ?? base
-                return CheckRun(id: c.id ?? name, databaseId: c.databaseId, name: name, url: c.detailsUrl,
-                                status: checkStatus(status: c.status, conclusion: c.conclusion))
+                return CheckRun(
+                    id: c.id ?? name, databaseId: c.databaseId, name: name, url: c.detailsUrl,
+                    status: checkStatus(status: c.status, conclusion: c.conclusion))
             } else {
                 let name = c.context ?? "status"
                 return CheckRun(id: c.id ?? name, name: name, url: c.targetUrl, status: statusContext(c.state))
@@ -211,12 +212,13 @@ public enum PullRequestQuery {
         guard let runs = contexts?.checkRunCountsByState, let statuses = contexts?.statusContextCountsByState else {
             return CheckCounts(checks: checks)
         }
-        return CheckCounts(checkRuns: runs.map { .init(state: $0.state, count: $0.count) },
-                           statuses: statuses.map { .init(state: $0.state, count: $0.count) })
+        return CheckCounts(
+            checkRuns: runs.map { .init(state: $0.state, count: $0.count) },
+            statuses: statuses.map { .init(state: $0.state, count: $0.count) })
     }
 
     static func map(_ n: Node) -> PR? {
-        guard let number = n.number else { return nil } // search can return non-PR nodes as {}
+        guard let number = n.number else { return nil }  // search can return non-PR nodes as {}
         let repo = RepoId(owner: n.repository.owner.login, name: n.repository.name)
         let reviewRequests = mapReviewRequests(n.reviewRequestNodes?.nodes ?? [], fallbackOrg: repo.owner)
         // The bulk query only asks for the rollup's own combined state, not a breakdown: see `checksFragment`.
@@ -261,8 +263,9 @@ public enum PullRequestQuery {
     }
 
     static func page(_ conn: Connection, rateLimit: RateLimit) -> Page {
-        Page(prs: conn.nodes.compactMap { $0 }.compactMap(map), hasNextPage: conn.pageInfo.hasNextPage,
-             endCursor: conn.pageInfo.endCursor, rateLimit: rateLimit, totalCount: conn.issueCount)
+        Page(
+            prs: conn.nodes.compactMap { $0 }.compactMap(map), hasNextPage: conn.pageInfo.hasNextPage,
+            endCursor: conn.pageInfo.endCursor, rateLimit: rateLimit, totalCount: conn.issueCount)
     }
 
     /// Everything in a PR search query except the scope, so chunking can budget the remaining length.
@@ -276,11 +279,15 @@ public enum PullRequestQuery {
 
     // MARK: API
 
-    public static func fetchRepo(_ repo: RepoId, first: Int = defaultPageSize, after: String? = nil, needsReviewers: Bool = false,
-                                 client: GraphQLClient) async throws -> Page {
-        let r: RepoResponse = try await client.query(repoPRs, variables: [
-            "owner": repo.owner, "name": repo.name, "first": first, "after": after, "needsReviewers": needsReviewers,
-        ])
+    public static func fetchRepo(
+        _ repo: RepoId, first: Int = defaultPageSize, after: String? = nil, needsReviewers: Bool = false,
+        client: GraphQLClient
+    ) async throws -> Page {
+        let r: RepoResponse = try await client.query(
+            repoPRs,
+            variables: [
+                "owner": repo.owner, "name": repo.name, "first": first, "after": after, "needsReviewers": needsReviewers,
+            ])
         guard let conn = r.repository?.pullRequests else { throw GraphQLError(messages: ["repository not found: \(repo.fullName)"]) }
         return page(conn, rateLimit: r.rateLimit)
     }
@@ -288,11 +295,15 @@ public enum PullRequestQuery {
     /// `scope` is e.g. "org:acme" or "author:octocat". `needsReviewers` fetches each PR's actual requested
     /// reviewers, not just the count - only the inbox's review-requested search needs it, to tell a direct
     /// request from a team one; everything else gets that lazily when a PR's detail view opens.
-    public static func fetchSearch(scope: String, first: Int = defaultPageSize, after: String? = nil, needsReviewers: Bool = false,
-                                   client: GraphQLClient) async throws -> Page {
-        let r: SearchResponse = try await client.query(searchPRs, variables: [
-            "q": searchPrefix + scope, "first": first, "after": after, "needsReviewers": needsReviewers,
-        ])
+    public static func fetchSearch(
+        scope: String, first: Int = defaultPageSize, after: String? = nil, needsReviewers: Bool = false,
+        client: GraphQLClient
+    ) async throws -> Page {
+        let r: SearchResponse = try await client.query(
+            searchPRs,
+            variables: [
+                "q": searchPrefix + scope, "first": first, "after": after, "needsReviewers": needsReviewers,
+            ])
         return page(r.search, rateLimit: r.rateLimit)
     }
 }

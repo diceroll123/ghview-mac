@@ -32,7 +32,7 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(50)) }
 
     model.loadPRs(soft: true)
     await gh.waitForRequest("prs:a/a-repo", count: 2)
-    model.loadPRs(more: true)                       // the Load more button is still on screen during a refresh
+    model.loadPRs(more: true)  // the Load more button is still on screen during a refresh
     await settle()
     #expect(await gh.requests().filter { $0 == "prs:a/a-repo" }.count == 2)  // no third request
 
@@ -54,7 +54,7 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(50)) }
     await settle()
     #expect(await gh.requests().filter { $0 == "prs:a/a-repo" }.count == 2)
 
-    await gh.release("prs:a/a-repo")                // the fixture serves the same page again
+    await gh.release("prs:a/a-repo")  // the fixture serves the same page again
     await settle()
     #expect(Set(model.prs.map(\.id)).count == model.prs.count)
     #expect(model.prs.count == count)
@@ -72,7 +72,7 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(50)) }
     await settle()
     #expect(model.prs.map(\.id) == ids)
     #expect(model.prCursor == cursor)
-    #expect(model.hasMorePRs)                       // the old pages are still on screen, so more can still be fetched
+    #expect(model.hasMorePRs)  // the old pages are still on screen, so more can still be fetched
     #expect(model.loadFailed)
 }
 

@@ -123,12 +123,14 @@ public struct PR: Hashable, Sendable, Codable, Identifiable {
     public var labelTotal: Int?
     public var reviewRequestTotal: Int?
 
-    public init(id: PrId, title: String, author: String, isDraft: Bool, isOpen: Bool, createdAt: Date, updatedAt: Date,
-                url: String, headRef: String, baseRef: String, headSha: String, additions: Int, deletions: Int,
-                comments: Int, autoMerge: Bool, reviewStatus: ReviewStatus, viewerApproved: Bool, mergeable: MergeableState,
-                requestedReviewers: [String] = [], labels: [PRLabel] = [], checks: [CheckRun] = [],
-                checkSummary: CheckStatus, checkCounts: CheckCounts = CheckCounts(), requestedTeams: [ReviewTeam] = [],
-                labelTotal: Int? = nil, reviewRequestTotal: Int? = nil) {
+    public init(
+        id: PrId, title: String, author: String, isDraft: Bool, isOpen: Bool, createdAt: Date, updatedAt: Date,
+        url: String, headRef: String, baseRef: String, headSha: String, additions: Int, deletions: Int,
+        comments: Int, autoMerge: Bool, reviewStatus: ReviewStatus, viewerApproved: Bool, mergeable: MergeableState,
+        requestedReviewers: [String] = [], labels: [PRLabel] = [], checks: [CheckRun] = [],
+        checkSummary: CheckStatus, checkCounts: CheckCounts = CheckCounts(), requestedTeams: [ReviewTeam] = [],
+        labelTotal: Int? = nil, reviewRequestTotal: Int? = nil
+    ) {
         self.id = id; self.title = title; self.author = author; self.isDraft = isDraft; self.isOpen = isOpen
         self.createdAt = createdAt; self.updatedAt = updatedAt; self.url = url
         self.headRef = headRef; self.baseRef = baseRef; self.headSha = headSha
@@ -184,10 +186,12 @@ public struct RepoInfo: Hashable, Sendable, Codable, Identifiable {
     public var releaseTag: String? = nil
     public var releaseDate: Date? = nil
 
-    public init(id: RepoId, language: String? = nil, pushedAt: Date? = nil, stars: Int = 0, openPRs: Int = 0,
-                isArchived: Bool = false, isPrivate: Bool = false, visibility: RepoVisibility = .public,
-                canPush: Bool = true, allowAutoMerge: Bool = true, hasIssues: Bool = true, isFork: Bool = false,
-                allowedMergeMethods: [MergeMethod] = MergeMethod.allCases, releaseTag: String? = nil, releaseDate: Date? = nil) {
+    public init(
+        id: RepoId, language: String? = nil, pushedAt: Date? = nil, stars: Int = 0, openPRs: Int = 0,
+        isArchived: Bool = false, isPrivate: Bool = false, visibility: RepoVisibility = .public,
+        canPush: Bool = true, allowAutoMerge: Bool = true, hasIssues: Bool = true, isFork: Bool = false,
+        allowedMergeMethods: [MergeMethod] = MergeMethod.allCases, releaseTag: String? = nil, releaseDate: Date? = nil
+    ) {
         self.id = id; self.language = language; self.pushedAt = pushedAt; self.stars = stars; self.openPRs = openPRs
         self.isArchived = isArchived; self.isPrivate = isPrivate; self.visibility = visibility
         self.canPush = canPush; self.allowAutoMerge = allowAutoMerge; self.hasIssues = hasIssues; self.isFork = isFork

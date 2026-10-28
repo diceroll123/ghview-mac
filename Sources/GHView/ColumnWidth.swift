@@ -39,7 +39,7 @@ struct ContentColumnWidth: NSViewRepresentable {
             defer { Self.setLastChosen(width, on: split) }
             // First layout: the column's own ideal width has just been applied.
             guard let last, last != width else { return }
-            guard abs(middle.frame.width - last) < 12 else { return } // the user has their own width
+            guard abs(middle.frame.width - last) < 12 else { return }  // the user has their own width
             split.setPosition(sidebar + split.dividerThickness + width, ofDividerAt: 1)
         }
     }

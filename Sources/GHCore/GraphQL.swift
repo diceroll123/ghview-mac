@@ -65,9 +65,13 @@ public struct GraphQLClient: Sendable {
         var args = ["api", "graphql", "-f", "query=\(query)"]
         for (key, value) in variables.sorted(by: { $0.key < $1.key }) {
             guard let value else { continue }
-            if let i = value as? Int { args += ["-F", "\(key)=\(i)"] }
-            else if let b = value as? Bool { args += ["-F", "\(key)=\(b)"] }
-            else { args += ["-f", "\(key)=\(value)"] }
+            if let i = value as? Int {
+                args += ["-F", "\(key)=\(i)"]
+            } else if let b = value as? Bool {
+                args += ["-F", "\(key)=\(b)"]
+            } else {
+                args += ["-f", "\(key)=\(value)"]
+            }
         }
         return args
     }
@@ -75,7 +79,8 @@ public struct GraphQLClient: Sendable {
     /// Variables are passed as strings (`-f`) or typed ints/bools (`-F`, so GitHub sees a real number or boolean
     /// rather than the string "true"); nil values are omitted.
     /// Throws if GraphQL reports errors and returns no data.
-    public func query<T: Decodable & Sendable>(_ query: String, variables: [String: Any?] = [:], as type: T.Type = T.self) async throws -> T {
+    public func query<T: Decodable & Sendable>(_ query: String, variables: [String: Any?] = [:], as type: T.Type = T.self) async throws -> T
+    {
         let data = try await gh.run(args(query, variables))
         return try Self.decode(data, as: type)
     }
@@ -86,8 +91,7 @@ public struct GraphQLClient: Sendable {
         _ query: String, variables: [String: Any?] = [:], as type: T.Type = T.self
     ) async throws -> (data: T, errors: [GraphQLErrorInfo]) {
         let body: Data
-        do { body = try await gh.run(args(query, variables)) }
-        catch let err as GhError {
+        do { body = try await gh.run(args(query, variables)) } catch let err as GhError {
             guard !err.stdout.isEmpty, (try? Self.decoder.decode(Envelope<T>.self, from: err.stdout))?.data != nil else { throw err }
             body = err.stdout
         }

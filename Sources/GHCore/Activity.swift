@@ -57,21 +57,21 @@ public struct PRActivity: Sendable, Equatable {
 
 public enum ActivityQuery {
     public static let query = """
-    query($owner: String!, $name: String!, $number: Int!) {
-      rateLimit { remaining limit cost resetAt used nodeCount }
-      repository(owner: $owner, name: $name) {
-        pullRequest(number: $number) {
-          body createdAt author { login }
-          comments(first: 100) { pageInfo { hasNextPage endCursor } nodes { id author { login } createdAt body url } }
-          reviews(first: 100) { pageInfo { hasNextPage endCursor } nodes { id author { login } state submittedAt body url } }
-          reviewThreads(first: 50) {
-            pageInfo { hasNextPage endCursor }
-            nodes { id path line isResolved isOutdated comments(first: 30) { pageInfo { hasNextPage endCursor } nodes { id author { login } createdAt body url } } }
+        query($owner: String!, $name: String!, $number: Int!) {
+          rateLimit { remaining limit cost resetAt used nodeCount }
+          repository(owner: $owner, name: $name) {
+            pullRequest(number: $number) {
+              body createdAt author { login }
+              comments(first: 100) { pageInfo { hasNextPage endCursor } nodes { id author { login } createdAt body url } }
+              reviews(first: 100) { pageInfo { hasNextPage endCursor } nodes { id author { login } state submittedAt body url } }
+              reviewThreads(first: 50) {
+                pageInfo { hasNextPage endCursor }
+                nodes { id path line isResolved isOutdated comments(first: 30) { pageInfo { hasNextPage endCursor } nodes { id author { login } createdAt body url } } }
+              }
+            }
           }
         }
-      }
-    }
-    """
+        """
 
     struct Response: Decodable, Sendable {
         var rateLimit: RateLimit
@@ -118,19 +118,24 @@ public enum ActivityQuery {
             // Pending reviews are drafts. A body-less COMMENTED review only wraps inline threads, shown separately.
             guard state != .pending, let date = rev.submittedAt else { continue }
             if state == .commented && rev.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
-            items.append(ActivityItem(id: rev.id, author: rev.author?.login ?? "ghost", date: date, body: rev.body, url: rev.url, kind: .review(state)))
+            items.append(
+                ActivityItem(
+                    id: rev.id, author: rev.author?.login ?? "ghost", date: date, body: rev.body, url: rev.url, kind: .review(state)))
         }
         items.sort { $0.date < $1.date }
         let threads = r.reviewThreads.nodes.compactMap { $0 }.map { t in
-            ReviewThread(id: t.id, path: t.path, line: t.line, isResolved: t.isResolved, isOutdated: t.isOutdated,
-                         comments: t.comments.nodes.compactMap { $0 }.map {
-                ThreadComment(id: $0.id, author: $0.author?.login ?? "ghost", date: $0.createdAt, body: $0.body, url: $0.url)
-            })
+            ReviewThread(
+                id: t.id, path: t.path, line: t.line, isResolved: t.isResolved, isOutdated: t.isOutdated,
+                comments: t.comments.nodes.compactMap { $0 }.map {
+                    ThreadComment(id: $0.id, author: $0.author?.login ?? "ghost", date: $0.createdAt, body: $0.body, url: $0.url)
+                })
         }
-        let truncated = [r.comments.pageInfo?.hasNextPage, r.reviews.pageInfo?.hasNextPage, r.reviewThreads.pageInfo?.hasNextPage]
+        let truncated =
+            [r.comments.pageInfo?.hasNextPage, r.reviews.pageInfo?.hasNextPage, r.reviewThreads.pageInfo?.hasNextPage]
             .contains(true) || r.reviewThreads.nodes.contains { $0?.comments.pageInfo?.hasNextPage == true }
-        return PRActivity(description: r.body, author: r.author?.login ?? "ghost", createdAt: r.createdAt,
-                          items: items, threads: threads, truncated: truncated, rateLimit: rateLimit)
+        return PRActivity(
+            description: r.body, author: r.author?.login ?? "ghost", createdAt: r.createdAt,
+            items: items, threads: threads, truncated: truncated, rateLimit: rateLimit)
     }
 
     // MARK: Later pages
@@ -156,12 +161,12 @@ public enum ActivityQuery {
         "reviewThreads",
         fields: "id path line isResolved isOutdated comments(first: 30) { pageInfo { hasNextPage endCursor } nodes { \(commentFields) } }")
     static let moreReplies = """
-    query($id: ID!, $after: String) {
-      node(id: $id) { ... on PullRequestReviewThread {
-        comments(first: 100, after: $after) { pageInfo { hasNextPage endCursor } nodes { \(commentFields) } }
-      } }
-    }
-    """
+        query($id: ID!, $after: String) {
+          node(id: $id) { ... on PullRequestReviewThread {
+            comments(first: 100, after: $after) { pageInfo { hasNextPage endCursor } nodes { \(commentFields) } }
+          } }
+        }
+        """
 
     private struct MoreResponse<C: Decodable & Sendable>: Decodable, Sendable {
         var repository: Repo?
@@ -236,9 +241,11 @@ public enum ActivityQuery {
     }
 
     public static func fetch(_ id: PrId, client: GraphQLClient) async throws -> PRActivity {
-        let r: Response = try await client.query(query, variables: [
-            "owner": id.repo.owner, "name": id.repo.name, "number": id.number,
-        ])
+        let r: Response = try await client.query(
+            query,
+            variables: [
+                "owner": id.repo.owner, "name": id.repo.name, "number": id.number,
+            ])
         guard let pr = r.repository?.pullRequest else { throw GraphQLError(messages: ["PR not found: \(id.repo.fullName)#\(id.number)"]) }
         return map(try await complete(pr, id: id, client: client), rateLimit: r.rateLimit)
     }

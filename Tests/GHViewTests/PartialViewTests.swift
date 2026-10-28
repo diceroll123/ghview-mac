@@ -25,7 +25,7 @@ private func loadFirstPage(_ m: AppModel) async {
 @Test @MainActor func aFilterIsFlaggedPartialUntilEverythingIsLoaded() async {
     let m = model(GatedGh(gate: { _ in false }, override: threePages()))
     await loadFirstPage(m)
-    #expect(m.hasMorePRs && !m.viewIsPartial)        // newest first with no filter is just the list
+    #expect(m.hasMorePRs && !m.viewIsPartial)  // newest first with no filter is just the list
     m.sort = .oldest
     #expect(m.viewIsPartial)
     m.sort = .newest; m.filter = "is:draft"
@@ -48,7 +48,7 @@ private func loadFirstPage(_ m: AppModel) async {
     await gh.waitForRequest("prs:diceroll123/ghview", count: 2)
     m.selectedRepo = RepoId(owner: "diceroll123", name: "other")
     m.loadPRs()
-    await gh.release("prs:diceroll123/ghview")         // the old repo's second page arrives late
+    await gh.release("prs:diceroll123/ghview")  // the old repo's second page arrives late
     await all.value
     #expect(!m.loadingAllPRs)
     #expect(m.prs.count != firstPage * 3)

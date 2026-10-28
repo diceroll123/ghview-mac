@@ -2,7 +2,7 @@ import Foundation
 
 public struct DiffLine: Hashable, Sendable, Identifiable {
     public enum Kind: Sendable { case context, added, removed, note }
-    public let id: Int          // unique within its file
+    public let id: Int  // unique within its file
     public var kind: Kind
     public var oldNumber: Int?
     public var newNumber: Int?
@@ -11,7 +11,7 @@ public struct DiffLine: Hashable, Sendable, Identifiable {
 
 public struct DiffHunk: Hashable, Sendable, Identifiable {
     public var id: Int
-    public var header: String   // the raw "@@ -a,b +c,d @@ section" line
+    public var header: String  // the raw "@@ -a,b +c,d @@ section" line
     public var section: String  // trailing function/section context, if any
     public var lines: [DiffLine]
 }
@@ -77,17 +77,29 @@ public enum DiffParser {
 
             if hunk == nil {
                 // File header lines, before the first hunk.
-                if line.hasPrefix("new file mode") { current!.status = .added }
-                else if line.hasPrefix("deleted file mode") { current!.status = .deleted }
-                else if line.hasPrefix("old mode ") { oldMode = String(line.dropFirst(9)); current!.modeChange = modeChange(oldMode, newMode) }
-                else if line.hasPrefix("new mode ") { newMode = String(line.dropFirst(9)); current!.modeChange = modeChange(oldMode, newMode) }
-                else if line.hasPrefix("rename from ") { current!.status = .renamed; current!.oldPath = unquote(String(line.dropFirst(12))) }
-                else if line.hasPrefix("rename to ") { current!.newPath = unquote(String(line.dropFirst(10))) }
-                else if line.hasPrefix("copy from ") { current!.status = .copied; current!.oldPath = unquote(String(line.dropFirst(10))) }
-                else if line.hasPrefix("copy to ") { current!.newPath = unquote(String(line.dropFirst(8))) }
-                else if line.hasPrefix("Binary files") || line.hasPrefix("GIT binary patch") { current!.isBinary = true }
-                else if line.hasPrefix("--- ") { if let p = stripPrefix(String(line.dropFirst(4))) { current!.oldPath = p } }
-                else if line.hasPrefix("+++ ") { if let p = stripPrefix(String(line.dropFirst(4))) { current!.newPath = p } }
+                if line.hasPrefix("new file mode") {
+                    current!.status = .added
+                } else if line.hasPrefix("deleted file mode") {
+                    current!.status = .deleted
+                } else if line.hasPrefix("old mode ") {
+                    oldMode = String(line.dropFirst(9)); current!.modeChange = modeChange(oldMode, newMode)
+                } else if line.hasPrefix("new mode ") {
+                    newMode = String(line.dropFirst(9)); current!.modeChange = modeChange(oldMode, newMode)
+                } else if line.hasPrefix("rename from ") {
+                    current!.status = .renamed; current!.oldPath = unquote(String(line.dropFirst(12)))
+                } else if line.hasPrefix("rename to ") {
+                    current!.newPath = unquote(String(line.dropFirst(10)))
+                } else if line.hasPrefix("copy from ") {
+                    current!.status = .copied; current!.oldPath = unquote(String(line.dropFirst(10)))
+                } else if line.hasPrefix("copy to ") {
+                    current!.newPath = unquote(String(line.dropFirst(8)))
+                } else if line.hasPrefix("Binary files") || line.hasPrefix("GIT binary patch") {
+                    current!.isBinary = true
+                } else if line.hasPrefix("--- ") {
+                    if let p = stripPrefix(String(line.dropFirst(4))) { current!.oldPath = p }
+                } else if line.hasPrefix("+++ ") {
+                    if let p = stripPrefix(String(line.dropFirst(4))) { current!.newPath = p }
+                }
             }
 
             if line.hasPrefix("@@") {
@@ -125,7 +137,8 @@ public enum DiffParser {
         return files.map { f in
             var f = f
             if var last = f.hunks.last, let l = last.lines.last, l.kind == .context, l.text.isEmpty, text.hasSuffix("\n"),
-               f.id == files.last?.id {
+                f.id == files.last?.id
+            {
                 last.lines.removeLast()
                 f.hunks[f.hunks.count - 1] = last
             }
@@ -176,10 +189,10 @@ public enum DiffParser {
                     digits += 1
                 }
                 bytes.append(UInt8(truncatingIfNeeded: value))
-            default: bytes.append(e) // \\ and \" and anything else stand for themselves
+            default: bytes.append(e)  // \\ and \" and anything else stand for themselves
             }
         }
-        return nil // no closing quote
+        return nil  // no closing quote
     }
 
     /// "a/foo bar.txt b/foo bar.txt" -> ("foo bar.txt", "foo bar.txt"). Either side may be quoted.
@@ -259,8 +272,11 @@ public enum DiffFetcher {
                 return Result(files: DiffParser.parse(String(decoding: data, as: UTF8.self)), usedCurrentDiff: true)
             } catch let current as GhError {
                 // Report both, since either one could be the useful clue.
-                throw GhError(args: current.args, status: current.status,
-                              stderr: "\(current.stderr.trimmingCharacters(in: .whitespacesAndNewlines))\n(the pinned comparison also failed: \(pinned.stderr.trimmingCharacters(in: .whitespacesAndNewlines)))")
+                throw GhError(
+                    args: current.args, status: current.status,
+                    stderr:
+                        "\(current.stderr.trimmingCharacters(in: .whitespacesAndNewlines))\n(the pinned comparison also failed: \(pinned.stderr.trimmingCharacters(in: .whitespacesAndNewlines)))"
+                )
             }
         }
     }
